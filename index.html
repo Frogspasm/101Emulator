@@ -34,6 +34,7 @@
   <select id="midi"><option value="">MIDI: none</option></select>
 </div>
 <div id="status">Tap "Start sound" first. Sound needs a tap on most phones.</div>
+<div id="debug" style="font-size:12px;color:#888;min-height:16px"></div>
 
 <div id="keys"></div>
 
@@ -88,6 +89,11 @@
       this.cr = Math.exp(-1 / (fs * Math.max(r / 3, 1e-4)));
       this.stage = 0; this.level = 0;          // 0 idle, 1 attack, 2 decay, 3 sustain, 4 release
     }
+    setParams(a, d, s, r) {                 // change times/levels without resetting the current note
+      this.a = Math.max(a, 1e-4); this.s = s;
+      this.cd = Math.exp(-1 / (this.fs * Math.max(d / 3, 1e-4)));
+      this.cr = Math.exp(-1 / (this.fs * Math.max(r / 3, 1e-4)));
+    }
     on() { this.stage = 1; }
     off() { if (this.stage !== 0) this.stage = 4; }
     next() {
@@ -118,7 +124,13 @@
       this.pwmEnv = new Env(this.fs, this.p.attackPwm, this.p.decayPwm, 0, this.p.release);
       this.ampEnv = new Env(this.fs, this.p.attack, this.p.decay, this.p.sustain, this.p.release);
     }
-    setPatch(patch) { this.p = Object.assign({}, this.p, patch); this.rebuildEnvs(); if (this.midi !== null) this.play(this.midi, false); }
+    setPatch(patch) {
+      this.p = Object.assign({}, this.p, patch);
+      const p = this.p;                     // update envelopes in place so a held note keeps sounding
+      this.pwmEnv.setParams(p.attackPwm, p.decayPwm, 0, p.release);
+      this.ampEnv.setParams(p.attack, p.decay, p.sustain, p.release);
+      if (this.midi !== null) this.play(this.midi, false);
+    }
     play(midi, retrigger) {
       this.midi = midi;
       const pos = this.cutCC !== null ? this.cutCC : this.p.cutoff;
@@ -328,6 +340,7 @@
     await ctx.resume();
     pushPatch();
     say("Sound on. Play the keys, or connect a MIDI keyboard.");
+    dbg.textContent = "Audio: on (" + Math.round(ctx.sampleRate) + " Hz)";
     document.getElementById("start").classList.add("on");
   }
   document.getElementById("start").addEventListener("click", () => startAudio().catch(err => say("Audio failed: " + err, true)));
@@ -335,24 +348,32 @@
   // ----- Web MIDI -----
   const midiSel = document.getElementById("midi");
   let midiAccess = null, inputs = [];
+  const dbg = document.getElementById("debug");
   function onMidi(e) {
-    if (!node) return;
     const [st, d1, d2] = e.data; const kind = st & 0xf0;
+    dbg.textContent = "MIDI in: status " + st.toString(16) + " data " + d1 + " " + (d2 === undefined ? "" : d2) +
+      (node ? "" : "  (audio is OFF: tap Start sound)");
+    if (!node) { say("MIDI is arriving, but audio is off. Tap Start sound.", true); return; }
     if (kind === 0x90 && d2 > 0) node.port.postMessage({ type: "on", note: d1 });
     else if (kind === 0x80 || (kind === 0x90 && d2 === 0)) node.port.postMessage({ type: "off", note: d1 });
     else if (kind === 0xb0) node.port.postMessage({ type: "cc", cc: d1, value: d2 });
     else if (kind === 0xe0) node.port.postMessage({ type: "bend", value: ((d2 << 7) | d1) - 8192 });
   }
+  // Listen on every MIDI input at once. Keyboards often expose several ports, and only one may carry notes.
   function refreshInputs() {
     midiSel.innerHTML = '<option value="">MIDI: none</option>';
     inputs = [];
-    midiAccess.inputs.forEach(inp => { inputs.push(inp); const o = document.createElement("option"); o.value = inp.id; o.textContent = inp.name; midiSel.appendChild(o); });
+    midiAccess.inputs.forEach(inp => {
+      inputs.push(inp);
+      inp.onmidimessage = onMidi;
+      const o = document.createElement("option"); o.value = inp.id; o.textContent = inp.name; midiSel.appendChild(o);
+    });
     if (inputs.length === 0) say("No MIDI keyboard found. Plug one in (USB or Bluetooth), then reconnect.");
+    else say("Listening on " + inputs.length + " MIDI input(s): " + inputs.map(i => i.name).join(", "));
   }
   midiSel.addEventListener("change", () => {
-    inputs.forEach(inp => inp.onmidimessage = null);
     const inp = inputs.find(i => i.id === midiSel.value);
-    if (inp) { inp.onmidimessage = onMidi; say("MIDI connected: " + inp.name); }
+    if (inp) say("Listening on all inputs. Last selected: " + inp.name);
   });
   if (navigator.requestMIDIAccess) {
     navigator.requestMIDIAccess({ sysex: false }).then(acc => {
@@ -397,6 +418,11 @@
       this.cr = Math.exp(-1 / (fs * Math.max(r / 3, 1e-4)));
       this.stage = 0; this.level = 0;          // 0 idle, 1 attack, 2 decay, 3 sustain, 4 release
     }
+    setParams(a, d, s, r) {                 // change times/levels without resetting the current note
+      this.a = Math.max(a, 1e-4); this.s = s;
+      this.cd = Math.exp(-1 / (this.fs * Math.max(d / 3, 1e-4)));
+      this.cr = Math.exp(-1 / (this.fs * Math.max(r / 3, 1e-4)));
+    }
     on() { this.stage = 1; }
     off() { if (this.stage !== 0) this.stage = 4; }
     next() {
@@ -427,7 +453,13 @@
       this.pwmEnv = new Env(this.fs, this.p.attackPwm, this.p.decayPwm, 0, this.p.release);
       this.ampEnv = new Env(this.fs, this.p.attack, this.p.decay, this.p.sustain, this.p.release);
     }
-    setPatch(patch) { this.p = Object.assign({}, this.p, patch); this.rebuildEnvs(); if (this.midi !== null) this.play(this.midi, false); }
+    setPatch(patch) {
+      this.p = Object.assign({}, this.p, patch);
+      const p = this.p;                     // update envelopes in place so a held note keeps sounding
+      this.pwmEnv.setParams(p.attackPwm, p.decayPwm, 0, p.release);
+      this.ampEnv.setParams(p.attack, p.decay, p.sustain, p.release);
+      if (this.midi !== null) this.play(this.midi, false);
+    }
     play(midi, retrigger) {
       this.midi = midi;
       const pos = this.cutCC !== null ? this.cutCC : this.p.cutoff;
