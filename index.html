@@ -346,22 +346,26 @@
   }
   function noteOn(m, src) { if (!node) return; node.port.postMessage({ type: "on", note: m }); if (keyEls[m]) keyEls[m].classList.add("on-k"); }
   function noteOff(m) { if (!node) return; node.port.postMessage({ type: "off", note: m }); if (keyEls[m]) keyEls[m].classList.remove("on-k"); }
-  let touchNote = null;
+  // Each finger holds its own key, so several keys can sound at once (needed for arpeggio and legato).
+  const fingers = new Map();                       // pointerId -> MIDI note
+  const keyAt = (x, y) => { const el = document.elementFromPoint(x, y); return el && el.dataset && el.dataset.m ? parseInt(el.dataset.m, 10) : null; };
   keysEl.addEventListener("pointerdown", e => {
-    const m = e.target.dataset.m; if (!m) return;
+    const m = keyAt(e.clientX, e.clientY); if (m === null) return;
     e.preventDefault(); keysEl.setPointerCapture(e.pointerId);
-    if (touchNote !== null) noteOff(touchNote);
-    touchNote = parseInt(m, 10); noteOn(touchNote);
+    fingers.set(e.pointerId, m); noteOn(m);
   });
   keysEl.addEventListener("pointermove", e => {
-    if (!e.buttons) return;
-    const el = document.elementFromPoint(e.clientX, e.clientY);
-    const m = el && el.dataset && el.dataset.m;
-    if (m && parseInt(m, 10) !== touchNote) { noteOff(touchNote); touchNote = parseInt(m, 10); noteOn(touchNote); }
+    if (!fingers.has(e.pointerId)) return;
+    const m = keyAt(e.clientX, e.clientY);
+    const old = fingers.get(e.pointerId);
+    if (m !== null && m !== old) { noteOff(old); fingers.set(e.pointerId, m); noteOn(m); }
   });
-  const release = () => { if (touchNote !== null) { noteOff(touchNote); touchNote = null; } };
-  keysEl.addEventListener("pointerup", release);
-  keysEl.addEventListener("pointercancel", release);
+  const fingerUp = e => {
+    if (!fingers.has(e.pointerId)) return;
+    noteOff(fingers.get(e.pointerId)); fingers.delete(e.pointerId);
+  };
+  keysEl.addEventListener("pointerup", fingerUp);
+  keysEl.addEventListener("pointercancel", fingerUp);
 
   // ----- audio -----
   const WORKLET = `
