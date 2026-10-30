@@ -48,6 +48,19 @@
   <div class="sl"><label>Release</label><input id="release" type="range" min="0" max="1" step="0.01" value="0.3"><span class="v"></span></div>
 </div>
 <div class="panel">
+  <div class="row">
+    <label>Arp</label>
+    <select id="arpMode"><option value="off">Off</option><option value="up">Up</option><option value="down">Down</option><option value="updown">Up/Down</option></select>
+    <label>Legato <input id="legato" type="checkbox"></label>
+    <label>Transpose</label>
+    <select id="transpose"><option value="0">L (0)</option><option value="12">M (+1 oct)</option><option value="24">H (+2 oct)</option></select>
+  </div>
+  <div class="sl"><label>Arp tempo</label><input id="arpBpm" type="range" min="0" max="1" step="0.01" value="0.33"><span class="v"></span></div>
+  <div class="sl"><label>Portamento</label><input id="portaTime" type="range" min="0" max="1" step="0.01" value="0"><span class="v"></span></div>
+  <div class="sl"><label>Mod wheel</label><input id="modWheel" type="range" min="0" max="1" step="0.01" value="0"><span class="v"></span></div>
+  <div class="sl"><label>Bender</label><input id="bender" type="range" min="-1" max="1" step="0.01" value="0"><span class="v"></span></div>
+</div>
+<div class="panel">
   <div class="sl"><label>Saw</label><input id="wSaw" type="range" min="0" max="1" step="0.01" value="1"><span class="v"></span></div>
   <div class="sl"><label>Pulse</label><input id="wPulse" type="range" min="0" max="1" step="0.01" value="0"><span class="v"></span></div>
   <div class="sl"><label>Pulse width</label><input id="pw" type="range" min="0" max="1" step="0.01" value="0.5"><span class="v"></span></div>
@@ -108,7 +121,13 @@
   const DEFAULT = { rangeOct: 0, attack: 0.005, decay: 0.25, sustain: 0.35, release: 0.2,
     attackPwm: 0.01, decayPwm: 0.2, pw: 0.5, pwmAmt: 0.25,
     wSaw: 1, wPulse: 0, wSub: 0, wNoise: 0, cutoff: 0.5, res: 0.4, envAmt: 0.6,
-    lfoRate: 5.0, lfoCut: 0, vibMax: 0, vcaGate: false, volume: 0.8 };
+    lfoRate: 5.0, lfoCut: 0, vibMax: 0, vcaGate: false, volume: 0.8,
+    // new performance features
+    legato: false,          // new note while holding: change pitch, do not retrigger envelopes
+    portaTime: 0,           // portamento glide time in seconds, 0..5 (service manual range)
+    transpose: 0,           // semitones: 0 (L), 12 (M), 24 (H). Manual: M = +1 V, H = +2 V of KCV
+    arpMode: "off",         // "off" | "up" | "down" | "updown"
+    arpBpm: 120 };          // arpeggio clock; steps are sixteenth notes (G45)
 
   class Voice {
     constructor(fs, patch) {
@@ -119,6 +138,9 @@
       this.pwmEnv = new Env(fs, this.p.attackPwm, this.p.decayPwm, 0, this.p.release);
       this.ampEnv = new Env(fs, this.p.attack, this.p.decay, this.p.sustain, this.p.release);
       this.y = [0, 0, 0, 0]; this.baseCut = 0; this.gateNow = 0;
+      this.pitch = null;          // current pitch in semitones (glides for portamento)
+      this.target = null;         // target pitch in semitones (transposed MIDI note)
+      this.arpIdx = 0; this.arpDir = 1; this.arpCount = 0; this.arpGateAt = 0; this.arpFirst = false;
     }
     rebuildEnvs() {
       this.pwmEnv = new Env(this.fs, this.p.attackPwm, this.p.decayPwm, 0, this.p.release);
@@ -131,20 +153,31 @@
       this.ampEnv.setParams(p.attack, p.decay, p.sustain, p.release);
       if (this.midi !== null) this.play(this.midi, false);
     }
+    arpSteps() { return Math.max(1, Math.round(this.fs * 60 / this.p.arpBpm / 4)); }   // sixteenths
+    /* Set the sounding note. retrigger restarts the envelopes (not for legato or glide). */
     play(midi, retrigger) {
-      this.midi = midi;
+      const eff = midi + this.p.transpose;
+      this.midi = midi;                                    // played key (for display/arp bookkeeping)
+      this.target = eff;
+      if (this.pitch === null) this.pitch = eff;
       const pos = this.cutCC !== null ? this.cutCC : this.p.cutoff;
-      this.baseCut = cutoffHz(midi, pos);
+      this.baseCut = cutoffHz(eff, pos);                   // keyboard tracking uses the transposed pitch
       if (retrigger) { this.ampEnv.on(); this.pwmEnv.on(); }
     }
     noteOn(midi) {
       const i = this.stack.indexOf(midi); if (i >= 0) this.stack.splice(i, 1);
-      this.stack.push(midi); this.play(midi, true);
+      const hadNotes = this.stack.length > 0;
+      this.stack.push(midi);
+      if (this.p.arpMode !== "off") {
+        if (!hadNotes) { this.arpCount = this.arpSteps(); this.arpFirst = true; }   // first key starts the arpeggio at once
+        return;
+      }
+      this.play(midi, !(this.p.legato && hadNotes));
     }
     noteOff(midi) {
       const i = this.stack.indexOf(midi); if (i >= 0) this.stack.splice(i, 1);
-      if (this.stack.length === 0) { this.ampEnv.off(); this.pwmEnv.off(); }
-      else if (midi === this.midi) this.play(this.stack[this.stack.length - 1], false);
+      if (this.stack.length === 0) { this.ampEnv.off(); this.pwmEnv.off(); this.arpCount = 0; return; }
+      if (this.p.arpMode === "off" && midi === this.midi) this.play(this.stack[this.stack.length - 1], false);
     }
     control(cc, value) {
       const v = value / 127;
@@ -154,21 +187,51 @@
     }
     pitchBend(value) { this.bend = 2 * value / 8192; }   // value -8192..8191 -> semitones
 
-    /* Render n samples into out (Float32Array-like). Returns nothing. */
+    /* Arpeggiator: advance one sixteenth at a time through the held notes (G45). */
+    arpAdvance() {
+      const notes = this.stack.slice().sort((a, b) => a - b);
+      const n = notes.length;
+      const mode = this.p.arpMode;
+      if (this.arpFirst) {                                 // first step plays the lowest (up, updown) or highest (down) note
+        this.arpFirst = false; this.arpDir = 1;
+        this.arpIdx = mode === "down" ? n - 1 : 0;
+      } else if (mode === "up") this.arpIdx = (this.arpIdx + 1) % n;
+      else if (mode === "down") this.arpIdx = (this.arpIdx - 1 + n) % n;
+      else {                                              // updown: bounce without repeating the ends
+        if (n > 1) {
+          this.arpIdx += this.arpDir;
+          if (this.arpIdx >= n - 1) { this.arpIdx = n - 1; this.arpDir = -1; }
+          if (this.arpIdx <= 0) { this.arpIdx = 0; this.arpDir = 1; }
+        } else this.arpIdx = 0;
+      }
+      if (this.arpIdx >= n) this.arpIdx = 0;
+      this.play(notes[this.arpIdx], true);
+    }
+
+    /* Render n samples into out. */
     render(out, n) {
       const p = this.p, fs = this.fs;
-      if (this.ampEnv.stage === 0 || this.midi === null) { for (let i = 0; i < n; i++) out[i] = 0; return; }
+      if (this.ampEnv.stage === 0 && this.stack.length === 0) { for (let i = 0; i < n; i++) out[i] = 0; return; }
+      if (this.midi === null && this.stack.length === 0) { for (let i = 0; i < n; i++) out[i] = 0; return; }
       const res = this.resCC !== null ? this.resCC : p.res;
       const k = Math.min(4.2 * res / 0.785, 5.0);          // G41
-      const base = noteHz(this.midi, p.rangeOct);
       const vib = this.mod * p.vibMax;
       const gateOn = this.stack.length > 0 ? 1 : 0;
+      const glideCoef = p.portaTime > 0 ? 1 - Math.exp(-1 / (fs * Math.max(p.portaTime / 3, 1e-4))) : 1;
+      const arpOn = p.arpMode !== "off" && this.stack.length > 0;
+      const stepLen = this.arpSteps();
       for (let i = 0; i < n; i++) {
+        if (arpOn) {                                          // arpeggiator clock
+          this.arpCount++;
+          if (this.arpCount >= stepLen) { this.arpCount = 0; this.arpGateAt = Math.round(stepLen * 0.6); this.arpAdvance(); }
+          if (this.arpCount === this.arpGateAt) { this.ampEnv.off(); this.pwmEnv.off(); }
+        }
+        if (this.pitch !== null && this.target !== null) this.pitch += (this.target - this.pitch) * glideCoef;
         const ph = this.phLfo; this.phLfo = (ph + p.lfoRate / fs) % 1;
         const lfo = 2 * Math.abs(2 * ph - 1) - 1;                   // G43 triangle
         const envPwm = this.pwmEnv.next();
         const env = this.ampEnv.next();
-        const f = base * Math.pow(2, (vib * lfo + this.bend) / 12);
+        const f = noteHz(this.pitch === null ? 69 : this.pitch, p.rangeOct) * Math.pow(2, (vib * lfo + this.bend) / 12);
         const dt = f / fs;
         this.ph = (this.ph + dt) % 1; const t = this.ph;
         this.phSub = (this.phSub + dt / 2) % 1; const ts = this.phSub;
@@ -179,7 +242,6 @@
         const noise = Math.random() * 2 - 1;
         const src = p.wSaw * MIX.saw * saw + p.wPulse * MIX.pulse * pulse + p.wSub * MIX.sub * sub + p.wNoise * MIX.noise * noise;
         const cut = this.baseCut * Math.pow(2, p.envAmt * 4.0 * env + p.lfoCut * lfo);   // G40
-        // four tanh one-pole stages with resonance feedback
         const g = 1 - Math.exp(-2 * Math.PI * Math.min(Math.max(cut, 20), fs * 0.45) / fs);
         const x = src * 0.5;
         const y = this.y;
@@ -233,12 +295,12 @@
     if (id === "sustain") return { sustain: v };
     return { [SL[id]]: v };
   }
-  function allPatch() {
+  var allPatch = function () {
     let p = {};
     Object.keys(SL).forEach(id => Object.assign(p, patchFrom(id)));
     p.rangeOct = parseInt(document.getElementById("range").value, 10);
     return p;
-  }
+  };
   function pushPatch() { if (node) node.port.postMessage({ type: "patch", patch: allPatch() }); }
   function showValues() {
     document.querySelectorAll(".sl input").forEach(el => {
@@ -383,6 +445,35 @@
     say("This browser has no Web MIDI (iPhone Safari does not). On-screen keys still work.", true);
   }
 
+
+  // ----- performance controls -----
+  const bpmFrom = v => Math.round(60 + v * 180);          // 60..240 BPM
+  const portaFrom = v => v * 5;                           // 0..5 s (service manual range)
+  function perfPatch() {
+    return {
+      arpMode: document.getElementById("arpMode").value,
+      arpBpm: bpmFrom(parseFloat(document.getElementById("arpBpm").value)),
+      legato: document.getElementById("legato").checked,
+      transpose: parseInt(document.getElementById("transpose").value, 10),
+      portaTime: portaFrom(parseFloat(document.getElementById("portaTime").value))
+    };
+  }
+  const _allPatch = allPatch;
+  allPatch = function () { return Object.assign(_allPatch(), perfPatch()); };
+  ["arpMode", "legato", "transpose"].forEach(id => document.getElementById(id).addEventListener("change", pushPatch));
+  ["arpBpm", "portaTime"].forEach(id => document.getElementById(id).addEventListener("input", () => { showValues(); pushPatch(); }));
+  document.getElementById("modWheel").addEventListener("input", e => {
+    if (node) node.port.postMessage({ type: "cc", cc: 1, value: Math.round(parseFloat(e.target.value) * 127) });
+  });
+  const bend = document.getElementById("bender");
+  bend.addEventListener("input", e => {
+    if (node) node.port.postMessage({ type: "bend", value: Math.round(parseFloat(e.target.value) * 8191) });
+  });
+  const springBack = () => { bend.value = 0; if (node) node.port.postMessage({ type: "bend", value: 0 }); showValues(); };
+  bend.addEventListener("pointerup", springBack);
+  bend.addEventListener("touchend", springBack);
+  bend.addEventListener("mouseup", springBack);
+
   // start with the bass patch loaded into the sliders
   document.getElementById("patch").dispatchEvent(new Event("change"));
   showValues();
@@ -437,7 +528,13 @@
   const DEFAULT = { rangeOct: 0, attack: 0.005, decay: 0.25, sustain: 0.35, release: 0.2,
     attackPwm: 0.01, decayPwm: 0.2, pw: 0.5, pwmAmt: 0.25,
     wSaw: 1, wPulse: 0, wSub: 0, wNoise: 0, cutoff: 0.5, res: 0.4, envAmt: 0.6,
-    lfoRate: 5.0, lfoCut: 0, vibMax: 0, vcaGate: false, volume: 0.8 };
+    lfoRate: 5.0, lfoCut: 0, vibMax: 0, vcaGate: false, volume: 0.8,
+    // new performance features
+    legato: false,          // new note while holding: change pitch, do not retrigger envelopes
+    portaTime: 0,           // portamento glide time in seconds, 0..5 (service manual range)
+    transpose: 0,           // semitones: 0 (L), 12 (M), 24 (H). Manual: M = +1 V, H = +2 V of KCV
+    arpMode: "off",         // "off" | "up" | "down" | "updown"
+    arpBpm: 120 };          // arpeggio clock; steps are sixteenth notes (G45)
 
   class Voice {
     constructor(fs, patch) {
@@ -448,6 +545,9 @@
       this.pwmEnv = new Env(fs, this.p.attackPwm, this.p.decayPwm, 0, this.p.release);
       this.ampEnv = new Env(fs, this.p.attack, this.p.decay, this.p.sustain, this.p.release);
       this.y = [0, 0, 0, 0]; this.baseCut = 0; this.gateNow = 0;
+      this.pitch = null;          // current pitch in semitones (glides for portamento)
+      this.target = null;         // target pitch in semitones (transposed MIDI note)
+      this.arpIdx = 0; this.arpDir = 1; this.arpCount = 0; this.arpGateAt = 0; this.arpFirst = false;
     }
     rebuildEnvs() {
       this.pwmEnv = new Env(this.fs, this.p.attackPwm, this.p.decayPwm, 0, this.p.release);
@@ -460,20 +560,31 @@
       this.ampEnv.setParams(p.attack, p.decay, p.sustain, p.release);
       if (this.midi !== null) this.play(this.midi, false);
     }
+    arpSteps() { return Math.max(1, Math.round(this.fs * 60 / this.p.arpBpm / 4)); }   // sixteenths
+    /* Set the sounding note. retrigger restarts the envelopes (not for legato or glide). */
     play(midi, retrigger) {
-      this.midi = midi;
+      const eff = midi + this.p.transpose;
+      this.midi = midi;                                    // played key (for display/arp bookkeeping)
+      this.target = eff;
+      if (this.pitch === null) this.pitch = eff;
       const pos = this.cutCC !== null ? this.cutCC : this.p.cutoff;
-      this.baseCut = cutoffHz(midi, pos);
+      this.baseCut = cutoffHz(eff, pos);                   // keyboard tracking uses the transposed pitch
       if (retrigger) { this.ampEnv.on(); this.pwmEnv.on(); }
     }
     noteOn(midi) {
       const i = this.stack.indexOf(midi); if (i >= 0) this.stack.splice(i, 1);
-      this.stack.push(midi); this.play(midi, true);
+      const hadNotes = this.stack.length > 0;
+      this.stack.push(midi);
+      if (this.p.arpMode !== "off") {
+        if (!hadNotes) { this.arpCount = this.arpSteps(); this.arpFirst = true; }   // first key starts the arpeggio at once
+        return;
+      }
+      this.play(midi, !(this.p.legato && hadNotes));
     }
     noteOff(midi) {
       const i = this.stack.indexOf(midi); if (i >= 0) this.stack.splice(i, 1);
-      if (this.stack.length === 0) { this.ampEnv.off(); this.pwmEnv.off(); }
-      else if (midi === this.midi) this.play(this.stack[this.stack.length - 1], false);
+      if (this.stack.length === 0) { this.ampEnv.off(); this.pwmEnv.off(); this.arpCount = 0; return; }
+      if (this.p.arpMode === "off" && midi === this.midi) this.play(this.stack[this.stack.length - 1], false);
     }
     control(cc, value) {
       const v = value / 127;
@@ -483,21 +594,51 @@
     }
     pitchBend(value) { this.bend = 2 * value / 8192; }   // value -8192..8191 -> semitones
 
-    /* Render n samples into out (Float32Array-like). Returns nothing. */
+    /* Arpeggiator: advance one sixteenth at a time through the held notes (G45). */
+    arpAdvance() {
+      const notes = this.stack.slice().sort((a, b) => a - b);
+      const n = notes.length;
+      const mode = this.p.arpMode;
+      if (this.arpFirst) {                                 // first step plays the lowest (up, updown) or highest (down) note
+        this.arpFirst = false; this.arpDir = 1;
+        this.arpIdx = mode === "down" ? n - 1 : 0;
+      } else if (mode === "up") this.arpIdx = (this.arpIdx + 1) % n;
+      else if (mode === "down") this.arpIdx = (this.arpIdx - 1 + n) % n;
+      else {                                              // updown: bounce without repeating the ends
+        if (n > 1) {
+          this.arpIdx += this.arpDir;
+          if (this.arpIdx >= n - 1) { this.arpIdx = n - 1; this.arpDir = -1; }
+          if (this.arpIdx <= 0) { this.arpIdx = 0; this.arpDir = 1; }
+        } else this.arpIdx = 0;
+      }
+      if (this.arpIdx >= n) this.arpIdx = 0;
+      this.play(notes[this.arpIdx], true);
+    }
+
+    /* Render n samples into out. */
     render(out, n) {
       const p = this.p, fs = this.fs;
-      if (this.ampEnv.stage === 0 || this.midi === null) { for (let i = 0; i < n; i++) out[i] = 0; return; }
+      if (this.ampEnv.stage === 0 && this.stack.length === 0) { for (let i = 0; i < n; i++) out[i] = 0; return; }
+      if (this.midi === null && this.stack.length === 0) { for (let i = 0; i < n; i++) out[i] = 0; return; }
       const res = this.resCC !== null ? this.resCC : p.res;
       const k = Math.min(4.2 * res / 0.785, 5.0);          // G41
-      const base = noteHz(this.midi, p.rangeOct);
       const vib = this.mod * p.vibMax;
       const gateOn = this.stack.length > 0 ? 1 : 0;
+      const glideCoef = p.portaTime > 0 ? 1 - Math.exp(-1 / (fs * Math.max(p.portaTime / 3, 1e-4))) : 1;
+      const arpOn = p.arpMode !== "off" && this.stack.length > 0;
+      const stepLen = this.arpSteps();
       for (let i = 0; i < n; i++) {
+        if (arpOn) {                                          // arpeggiator clock
+          this.arpCount++;
+          if (this.arpCount >= stepLen) { this.arpCount = 0; this.arpGateAt = Math.round(stepLen * 0.6); this.arpAdvance(); }
+          if (this.arpCount === this.arpGateAt) { this.ampEnv.off(); this.pwmEnv.off(); }
+        }
+        if (this.pitch !== null && this.target !== null) this.pitch += (this.target - this.pitch) * glideCoef;
         const ph = this.phLfo; this.phLfo = (ph + p.lfoRate / fs) % 1;
         const lfo = 2 * Math.abs(2 * ph - 1) - 1;                   // G43 triangle
         const envPwm = this.pwmEnv.next();
         const env = this.ampEnv.next();
-        const f = base * Math.pow(2, (vib * lfo + this.bend) / 12);
+        const f = noteHz(this.pitch === null ? 69 : this.pitch, p.rangeOct) * Math.pow(2, (vib * lfo + this.bend) / 12);
         const dt = f / fs;
         this.ph = (this.ph + dt) % 1; const t = this.ph;
         this.phSub = (this.phSub + dt / 2) % 1; const ts = this.phSub;
@@ -508,7 +649,6 @@
         const noise = Math.random() * 2 - 1;
         const src = p.wSaw * MIX.saw * saw + p.wPulse * MIX.pulse * pulse + p.wSub * MIX.sub * sub + p.wNoise * MIX.noise * noise;
         const cut = this.baseCut * Math.pow(2, p.envAmt * 4.0 * env + p.lfoCut * lfo);   // G40
-        // four tanh one-pole stages with resonance feedback
         const g = 1 - Math.exp(-2 * Math.PI * Math.min(Math.max(cut, 20), fs * 0.45) / fs);
         const x = src * 0.5;
         const y = this.y;
