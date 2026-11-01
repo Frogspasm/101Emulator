@@ -9,8 +9,7 @@
  * Lines starting with # are comments. Patch names come from the core's PATCHES
  * (bass, pwm, whistle). Output is peak-normalised to 0.8, as the old Python renderer was.
  *
- * Note: the core uses Math.random() for noise, so two renders of a patch that uses
- * noise will not be identical.
+ * Noise comes from the core's seeded generator, so renders are identical run to run.
  */
 "use strict";
 const fs = require("fs");
