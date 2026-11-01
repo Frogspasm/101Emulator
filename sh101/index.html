@@ -1,0 +1,555 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SH-101 Emulator</title>
+<style>
+  :root {
+    --bg: #17181b;
+    --panel: #26282d;
+    --panel-2: #2f3237;
+    --ink: #ece9e1;
+    --dim: #8c9099;
+    --accent: #f0a030;
+    --led: #ff4d3d;
+    --key-w: #f4f2ee;
+    --key-b: #1b1b1b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 13px/1.3 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; flex-wrap: wrap;
+    padding: 14px 16px;
+    background: var(--panel);
+    border-bottom: 2px solid var(--accent);
+  }
+  header h1 { margin: 0; font-size: 18px; letter-spacing: .08em; }
+  header h1 span { color: var(--accent); }
+  .led { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #3a2a2a; margin-right: 6px; vertical-align: middle; }
+  .led.on { background: var(--led); box-shadow: 0 0 8px var(--led); }
+  button {
+    font: inherit; color: var(--ink);
+    background: var(--panel-2); border: 1px solid #444852;
+    border-radius: 6px; padding: 6px 10px; cursor: pointer;
+    user-select: none;
+  }
+  button:hover { border-color: var(--accent); }
+  button.active { background: var(--accent); color: #111; border-color: var(--accent); font-weight: 600; }
+  #power.active { background: var(--led); border-color: var(--led); color: #fff; }
+
+  main {
+    display: grid; gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    padding: 16px;
+    max-width: 1200px; margin: 0 auto;
+  }
+  section {
+    background: var(--panel);
+    border: 1px solid #343840;
+    border-radius: 10px;
+    padding: 12px 14px 14px;
+  }
+  section h2 {
+    margin: 0 0 10px; font-size: 12px; letter-spacing: .15em;
+    text-transform: uppercase; color: var(--accent);
+  }
+  .row { display: grid; grid-template-columns: 92px 1fr 62px; align-items: center; gap: 8px; margin: 7px 0; }
+  .row label { color: var(--dim); }
+  .row output { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); }
+  .toggles { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
+  .toggles button { flex: 1 1 auto; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+
+  #kbd-wrap {
+    max-width: 1200px; margin: 0 auto 24px; padding: 0 16px;
+  }
+  #keys {
+    position: relative; height: 170px;
+    background: #111; border-radius: 0 0 8px 8px; padding: 0 0 0 0;
+    touch-action: none; user-select: none;
+    display: flex;
+  }
+  .key {
+    position: relative; flex: 1 1 0; height: 100%;
+    background: var(--key-w); border: 1px solid #555; border-top: 0;
+    border-radius: 0 0 6px 6px;
+  }
+  .key.on { background: var(--accent); }
+  .key.black {
+    position: absolute; top: 0; height: 60%; width: calc(100% / 15 * .6);
+    background: var(--key-b); border: 1px solid #000; z-index: 2;
+    border-radius: 0 0 4px 4px;
+  }
+  .key.black.on { background: var(--accent); }
+  .key .hint { position: absolute; bottom: 6px; left: 0; right: 0; text-align: center; font-size: 11px; color: #666; pointer-events: none; }
+  #keys-hint { text-align: center; color: var(--dim); margin: 8px 0 0; font-size: 12px; }
+  footer { color: var(--dim); text-align: center; padding: 0 16px 24px; font-size: 12px; }
+  kbd { background: #333; border-radius: 3px; padding: 0 4px; color: var(--ink); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1><span>SH-101</span> EMULATOR</h1>
+  <div>
+    <span id="led" class="led"></span>
+    <button id="power">Audio off</button>
+    <button id="oct-down">Oct −</button>
+    <span id="oct-label">Oct 0</span>
+    <button id="oct-up">Oct +</button>
+    <button id="panic" title="Release everything">Panic</button>
+  </div>
+</header>
+
+<main id="panels"></main>
+
+<div id="kbd-wrap">
+  <div id="keys"></div>
+  <p id="keys-hint">Computer keys: <kbd>A W S E D F T G Y H U J K O L P</kbd> play notes · <kbd>Z</kbd>/<kbd>X</kbd> octave down/up</p>
+</div>
+
+<footer>Monophonic emulation using Web Audio · press the power button or any note key to start the engine</footer>
+
+<script>
+(() => {
+  "use strict";
+
+  // ---------- Parameters (all knobs are 0..1 unless noted) ----------
+  const P = {
+    saw: true, pulse: false, pw: 0.5, sub: 0, noise: 0,
+    cutoff: 0.6, res: 0.2, envAmt: 0.5, kbd: 0, lfoF: 0,
+    attack: 0.05, decay: 0.4, sustain: 0.7, release: 0.3, mode: "gate",
+    lfoRate: 0.4, lfoWave: "triangle", lfoPitch: 0,
+    glide: 0, volume: 0.7, octave: 0,
+  };
+
+  // ---------- Mappings from 0..1 knob position to real units ----------
+  const cutoffHz  = v => 20 * Math.pow(600, v);            // 20 Hz .. 12 kHz
+  const timeS     = v => 0.003 * Math.pow(1700, v);        // 3 ms .. ~5 s
+  const glideS    = v => 0.5 * v * v;                      // 0 .. 0.5 s
+  const lfoHz     = v => 0.05 * Math.pow(600, v);          // 0.05 .. 30 Hz
+  const pwVal     = v => 0.05 + 0.9 * v;                   // 5 % .. 95 % duty
+  const resQ      = v => 0.7 + 9 * v;                      // Q per filter stage
+  const filterEnvHz = 8000, lfoFilterHz = 3000;
+  const midiFreq  = m => 440 * Math.pow(2, (m - 69) / 12);
+
+  // ---------- Audio engine ----------
+  let ctx = null;
+  const N = {};
+  let curNote = null;
+  let held = [];                 // held MIDI notes, most recent last
+  const pulseCache = new Map();
+
+  // Band-limited pulse wave with variable duty, built from its Fourier series.
+  // Pulse of duty d: a_n = 2 sin(2πnd)/(nπ), b_n = 2 (1 - cos(2πnd))/(nπ). DC removed.
+  function pulseWave(d) {
+    const key = Math.round(d * 200);
+    if (pulseCache.has(key)) return pulseCache.get(key);
+    const n = 96;
+    const real = new Float32Array(n), imag = new Float32Array(n);
+    const dd = key / 200;
+    for (let k = 1; k < n; k++) {
+      real[k] = 2 * Math.sin(2 * Math.PI * k * dd) / (k * Math.PI);
+      imag[k] = 2 * (1 - Math.cos(2 * Math.PI * k * dd)) / (k * Math.PI);
+    }
+    const w = ctx.createPeriodicWave(real, imag, { disableNormalization: true });
+    pulseCache.set(key, w);
+    return w;
+  }
+
+  function gain(v) { const g = ctx.createGain(); g.gain.value = v; return g; }
+
+  function buildAudio() {
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+
+    // VCO: saw, pulse, and sub (square one octave down)
+    N.saw = ctx.createOscillator(); N.saw.type = "sawtooth";
+    N.pulse = ctx.createOscillator(); N.pulse.setPeriodicWave(pulseWave(pwVal(P.pw)));
+    N.sub = ctx.createOscillator(); N.sub.type = "square";
+    [N.saw, N.pulse, N.sub].forEach(o => o.start());
+
+    N.sawG = gain(0); N.pulseG = gain(0); N.subG = gain(0); N.noiseG = gain(0);
+    N.saw.connect(N.sawG); N.pulse.connect(N.pulseG); N.sub.connect(N.subG);
+
+    // Noise source (looped white noise buffer)
+    const buf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    N.noise = ctx.createBufferSource(); N.noise.buffer = buf; N.noise.loop = true;
+    N.noise.connect(N.noiseG); N.noise.start();
+
+    // Mixer -> 24 dB lowpass (two cascaded 12 dB resonant stages) -> VCA -> master
+    N.mix = gain(1);
+    [N.sawG, N.pulseG, N.subG, N.noiseG].forEach(g => g.connect(N.mix));
+    N.f1 = ctx.createBiquadFilter(); N.f1.type = "lowpass";
+    N.f2 = ctx.createBiquadFilter(); N.f2.type = "lowpass";
+    N.mix.connect(N.f1); N.f1.connect(N.f2);
+    N.vca = gain(0);                       // driven entirely by the envelope
+    N.f2.connect(N.vca);
+    N.master = gain(0.7);
+    N.vca.connect(N.master); N.master.connect(ctx.destination);
+
+    // ADSR envelope (ConstantSource drives both VCA and filter amount)
+    N.env = ctx.createConstantSource(); N.env.offset.value = 0; N.env.start();
+    N.env.connect(N.vca.gain);
+    N.envF = gain(0);
+    N.env.connect(N.envF);
+    N.envF.connect(N.f1.frequency); N.envF.connect(N.f2.frequency);
+
+    // LFO: pitch (cents on detune) and filter (Hz)
+    N.lfo = ctx.createOscillator(); N.lfo.start();
+    N.lfoP = gain(0);
+    N.lfo.connect(N.lfoP);
+    [N.saw, N.pulse, N.sub].forEach(o => N.lfoP.connect(o.detune));
+    N.lfoF = gain(0);
+    N.lfo.connect(N.lfoF);
+    N.lfoF.connect(N.f1.frequency); N.lfoF.connect(N.f2.frequency);
+
+    applyAll();
+  }
+
+  function ensureAudio() {
+    if (!ctx) buildAudio();
+    if (ctx.state !== "running") ctx.resume();
+    updatePower();
+    return ctx;
+  }
+
+  function applyAll() {
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    N.pulse.setPeriodicWave(pulseWave(pwVal(P.pw)));
+    N.sawG.gain.setTargetAtTime(P.saw ? 0.5 : 0, t, 0.01);
+    N.pulseG.gain.setTargetAtTime(P.pulse ? 0.5 : 0, t, 0.01);
+    N.subG.gain.setTargetAtTime(P.sub * 0.5, t, 0.01);
+    N.noiseG.gain.setTargetAtTime(P.noise * 0.4, t, 0.01);
+    N.f1.Q.setTargetAtTime(resQ(P.res), t, 0.01);
+    N.f2.Q.setTargetAtTime(resQ(P.res), t, 0.01);
+    N.envF.gain.setTargetAtTime(P.envAmt * filterEnvHz, t, 0.01);
+    N.lfoF.gain.setTargetAtTime(P.lfoF * lfoFilterHz, t, 0.01);
+    N.lfoP.gain.setTargetAtTime(P.lfoPitch * 100, t, 0.01);
+    N.lfo.frequency.setTargetAtTime(lfoHz(P.lfoRate), t, 0.01);
+    N.lfo.type = P.lfoWave;
+    N.master.gain.setTargetAtTime(P.volume * 0.8, t, 0.01);
+    updateCutoff();
+  }
+
+  // Filter base frequency, with keyboard tracking relative to the current note
+  function updateCutoff() {
+    if (!ctx) return;
+    const m = curNote ?? 60;
+    const f = cutoffHz(P.cutoff) * Math.pow(2, P.kbd * (m - 60) / 12);
+    const t = ctx.currentTime;
+    N.f1.frequency.setTargetAtTime(f, t, 0.02);
+    N.f2.frequency.setTargetAtTime(f, t, 0.02);
+  }
+
+  function setPitch(m) {
+    curNote = m;
+    const t = ctx.currentTime;
+    const g = glideS(P.glide);
+    const targets = [[N.saw, midiFreq(m)], [N.pulse, midiFreq(m)], [N.sub, midiFreq(m) / 2]];
+    for (const [o, f] of targets) {
+      o.frequency.cancelScheduledValues(t);
+      if (g > 0.001) {
+        o.frequency.setValueAtTime(o.frequency.value, t);
+        o.frequency.setTargetAtTime(f, t, g / 3);
+      } else {
+        o.frequency.setValueAtTime(f, t);
+      }
+    }
+    updateCutoff();
+  }
+
+  function envOn() {
+    const t = ctx.currentTime, o = N.env.offset;
+    const a = timeS(P.attack), d = timeS(P.decay);
+    o.cancelScheduledValues(t);
+    o.setValueAtTime(o.value, t);
+    o.linearRampToValueAtTime(1, t + a);
+    // Gate mode decays to the sustain level; Trig mode is a one-shot AD (decays to 0)
+    const target = P.mode === "trig" ? 0 : P.sustain;
+    o.setTargetAtTime(target, t + a, Math.max(d, 0.001) / 4);
+  }
+
+  function envOff() {
+    const t = ctx.currentTime, o = N.env.offset;
+    o.cancelScheduledValues(t);
+    o.setValueAtTime(o.value, t);
+    o.setTargetAtTime(0, t, Math.max(timeS(P.release), 0.001) / 4);
+  }
+
+  // ---------- Note handling (monophonic, last-note priority, legato glide) ----------
+  function noteOn(m) {
+    if (!ctx) return;
+    if (held.includes(m)) return;
+    const first = held.length === 0;
+    held.push(m);
+    setPitch(m);
+    // Gate mode: retrigger only on the first key; legato keys glide without retriggering.
+    // Trig mode: every press retriggers.
+    if (P.mode === "trig" || first) envOn();
+    refreshKeys();
+  }
+
+  function noteOff(m) {
+    if (!ctx) return;
+    const i = held.indexOf(m);
+    if (i < 0) return;
+    held.splice(i, 1);
+    if (held.length) {
+      if (m === curNote) setPitch(held[held.length - 1]);  // fall back to last held key
+    } else if (P.mode === "gate") {
+      envOff();
+    }
+    refreshKeys();
+  }
+
+  function panic() {
+    held = [];
+    activeKeys.clear();
+    pointerKeys.clear();
+    if (ctx) envOff();
+    refreshKeys();
+  }
+
+  // ---------- Computer keyboard ----------
+  const KEYMAP = { a:0, w:1, s:2, e:3, d:4, f:5, t:6, g:7, y:8, h:9, u:10, j:11, k:12, o:13, l:14, p:15 };
+  const activeKeys = new Map();   // computer key -> midi
+  const pointerKeys = new Map();  // pointerId -> midi
+  const baseMidi = () => 48 + 12 * P.octave;
+
+  window.addEventListener("keydown", e => {
+    if (e.target && e.target.matches && e.target.matches("textarea,select,input:not([type=range])")) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const k = e.key.toLowerCase();
+    if (k === "z") { if (!e.repeat) changeOctave(-1); return; }
+    if (k === "x") { if (!e.repeat) changeOctave(1); return; }
+    if (!(k in KEYMAP) || e.repeat) return;
+    ensureAudio();
+    const m = baseMidi() + KEYMAP[k];
+    activeKeys.set(k, m);
+    noteOn(m);
+    e.preventDefault();
+  });
+
+  window.addEventListener("keyup", e => {
+    const k = e.key.toLowerCase();
+    if (!activeKeys.has(k)) return;
+    const m = activeKeys.get(k);
+    activeKeys.delete(k);
+    noteOff(m);
+  });
+
+  window.addEventListener("blur", panic);
+
+  function changeOctave(delta) {
+    P.octave = Math.max(-2, Math.min(2, P.octave + delta));
+    $("#oct-label").textContent = `Oct ${P.octave > 0 ? "+" : ""}${P.octave}`;
+    buildKeys();
+  }
+
+  // ---------- On-screen keyboard (two octaves + top C) ----------
+  const WHITE_SEMIS = [0, 2, 4, 5, 7, 9, 11];
+  const BLACK_SEMIS = [1, 3, 6, 8, 10];
+  const N_KEYS = 25;                       // 15 white keys
+  const N_WHITE = 15;
+
+  function buildKeys() {
+    const el = $("#keys");
+    el.innerHTML = "";
+    let whiteIdx = 0;
+    const base = baseMidi();
+    const keyEls = [];
+    for (let i = 0; i < N_KEYS; i++) {
+      const s = i % 12;
+      const m = base + i;
+      const isBlack = BLACK_SEMIS.includes(s);
+      const div = document.createElement("div");
+      div.dataset.midi = m;
+      if (isBlack) {
+        div.className = "key black";
+        div.style.left = `calc(${(whiteIdx * 100 / N_WHITE)}% - ${(100 / N_WHITE) * 0.3}%)`;
+      } else {
+        div.className = "key white";
+        whiteIdx++;
+      }
+      el.appendChild(div);
+      keyEls.push(div);
+      div.addEventListener("pointerdown", ev => {
+        ev.preventDefault();
+        ensureAudio();
+        pointerKeys.set(ev.pointerId, m);
+        noteOn(m);
+      });
+    }
+    el.__keys = keyEls;
+    refreshKeys();
+  }
+
+  // Release any mouse/touch key on pointer up anywhere in the window
+  window.addEventListener("pointerup", ev => {
+    const m = pointerKeys.get(ev.pointerId);
+    if (m === undefined) return;
+    pointerKeys.delete(ev.pointerId);
+    noteOff(m);
+  });
+  window.addEventListener("pointercancel", ev => {
+    const m = pointerKeys.get(ev.pointerId);
+    if (m === undefined) return;
+    pointerKeys.delete(ev.pointerId);
+    noteOff(m);
+  });
+
+  function refreshKeys() {
+    const el = $("#keys");
+    if (!el.__keys) return;
+    const lit = new Set([...held]);
+    for (const div of el.__keys) div.classList.toggle("on", lit.has(+div.dataset.midi));
+  }
+
+  // ---------- Control panels ----------
+  const fmtPct = v => Math.round(v * 100) + "%";
+  const fmtS   = s => s < 1 ? (s * 1000).toFixed(0) + " ms" : s.toFixed(2) + " s";
+  const SECTIONS = [
+    {
+      title: "VCO", knobs: [
+        { id: "sub", label: "Sub", fmt: fmtPct },
+        { id: "noise", label: "Noise", fmt: fmtPct },
+        { id: "pw", label: "Pulse width", fmt: v => Math.round(pwVal(v) * 100) + "%" },
+      ],
+      toggles: [
+        { id: "saw", label: "Saw", options: [["on", true], ["off", false]] },
+        { id: "pulse", label: "Pulse", options: [["on", true], ["off", false]] },
+      ],
+    },
+    {
+      title: "VCF", knobs: [
+        { id: "cutoff", label: "Cutoff", fmt: v => Math.round(cutoffHz(v)) + " Hz" },
+        { id: "res", label: "Resonance", fmt: fmtPct },
+        { id: "envAmt", label: "Env amount", fmt: fmtPct },
+        { id: "kbd", label: "Key track", fmt: fmtPct },
+        { id: "lfoF", label: "LFO → VCF", fmt: fmtPct },
+      ],
+    },
+    {
+      title: "Envelope", knobs: [
+        { id: "attack", label: "Attack", fmt: v => fmtS(timeS(v)) },
+        { id: "decay", label: "Decay", fmt: v => fmtS(timeS(v)) },
+        { id: "sustain", label: "Sustain", fmt: fmtPct },
+        { id: "release", label: "Release", fmt: v => fmtS(timeS(v)) },
+      ],
+      toggles: [
+        { id: "mode", label: "Mode", options: [["Gate", "gate"], ["Trig", "trig"]] },
+      ],
+    },
+    {
+      title: "LFO", knobs: [
+        { id: "lfoRate", label: "Rate", fmt: v => lfoHz(v).toFixed(2) + " Hz" },
+        { id: "lfoPitch", label: "LFO → pitch", fmt: v => Math.round(v * 100) + " ct" },
+      ],
+      toggles: [
+        { id: "lfoWave", label: "Wave", options: [["Tri", "triangle"], ["Square", "square"], ["Saw", "sawtooth"]] },
+      ],
+    },
+    {
+      title: "Master", knobs: [
+        { id: "glide", label: "Glide", fmt: v => glideS(v).toFixed(2) + " s" },
+        { id: "volume", label: "Volume", fmt: fmtPct },
+      ],
+    },
+  ];
+
+  const outputs = {};
+  function buildPanels() {
+    const root = $("#panels");
+    for (const sec of SECTIONS) {
+      const box = document.createElement("section");
+      box.innerHTML = `<h2>${sec.title}</h2>`;
+      for (const t of sec.toggles || []) {
+        const wrap = document.createElement("div");
+        wrap.className = "toggles";
+        wrap.setAttribute("aria-label", t.label);
+        for (const [text, value] of t.options) {
+          const b = document.createElement("button");
+          b.textContent = `${t.label} ${text}`;
+          b.dataset.param = t.id;
+          b.dataset.value = String(value);
+          b.addEventListener("click", () => {
+            P[t.id] = value;
+            ensureAudio();
+            syncControls();
+            applyAll();
+          });
+          wrap.appendChild(b);
+        }
+        box.appendChild(wrap);
+      }
+      for (const k of sec.knobs || []) {
+        const row = document.createElement("div");
+        row.className = "row";
+        row.innerHTML = `<label for="p-${k.id}">${k.label}</label>
+          <input type="range" id="p-${k.id}" min="0" max="1" step="0.001">
+          <output id="o-${k.id}"></output>`;
+        const input = row.querySelector("input");
+        input.value = P[k.id];
+        input.addEventListener("input", () => {
+          P[k.id] = parseFloat(input.value);
+          outputs[k.id].textContent = k.fmt(P[k.id]);
+          ensureAudio();
+          applyAll();
+        });
+        outputs[k.id] = row.querySelector("output");
+        outputs[k.id].textContent = k.fmt(P[k.id]);
+        box.appendChild(row);
+      }
+      root.appendChild(box);
+    }
+    syncControls();
+  }
+
+  function syncControls() {
+    document.querySelectorAll("button[data-param]").forEach(b => {
+      const id = b.dataset.param;
+      const on = typeof P[id] === "boolean" ? (P[id] === (b.dataset.value === "true")) : String(P[id]) === b.dataset.value;
+      b.classList.toggle("active", on);
+    });
+    document.querySelectorAll("input[type=range]").forEach(inp => {
+      const id = inp.id.slice(2);
+      inp.value = P[id];
+      const knob = SECTIONS.flatMap(s => s.knobs || []).find(k => k.id === id);
+      if (knob && outputs[id]) outputs[id].textContent = knob.fmt(P[id]);
+    });
+  }
+
+  function updatePower() {
+    const on = !!(ctx && ctx.state === "running");
+    $("#power").textContent = on ? "Audio on" : "Audio off";
+    $("#power").classList.toggle("active", on);
+    $("#led").classList.toggle("on", on);
+  }
+
+  // ---------- Init ----------
+  const $ = s => document.querySelector(s);
+  $("#power").addEventListener("click", () => {
+    if (ctx && ctx.state === "running") { ctx.suspend(); updatePower(); }
+    else ensureAudio();
+  });
+  $("#oct-down").addEventListener("click", () => changeOctave(-1));
+  $("#oct-up").addEventListener("click", () => changeOctave(1));
+  $("#panic").addEventListener("click", panic);
+
+  buildPanels();
+  buildKeys();
+  updatePower();
+})();
+</script>
+</body>
+</html>
