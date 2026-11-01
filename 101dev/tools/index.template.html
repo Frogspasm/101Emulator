@@ -31,6 +31,17 @@
   .grp .cap { color: #aaa; font-size: 13px; margin-bottom: 4px; }
   .seg { display: flex; flex-wrap: wrap; gap: 6px; }
   .seg button, .grp > button { flex: 1 1 auto; padding: 8px 6px; font-size: 13px; }
+  #keys.folded { display: none; }
+  .inline { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+  .inline > .grp { margin: 6px 0; flex: 0 0 auto; }
+  .hrow { display: flex; gap: 12px; align-items: flex-start; margin: 6px 0; }
+  .hrow > .grp { flex: 1 1 auto; min-width: 0; margin: 6px 0; }
+  .vsl { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 0 0 auto; font-size: 14px; }
+  .vsl .vbox { position: relative; width: 36px; height: 150px; }
+  .vsl .vbox input { position: absolute; left: -57px; top: 57px; width: 150px; height: 36px; transform: rotate(-90deg); margin: 0; }
+  .vsl output { color: #aaa; font-size: 12px; font-variant-numeric: tabular-nums; }
+  .seg.stack { flex-direction: column; flex-wrap: nowrap; }
+  .seg.stack button { flex: 0 0 auto; }
   .knobs { display: flex; flex-wrap: wrap; justify-content: space-around; gap: 6px 4px; margin: 6px 0; }
   <!--KNOB_CSS-->
   footer { color: #777; font-size: 12px; margin: 16px 0 0; }
@@ -41,7 +52,7 @@
 <div class="row">
   <button id="start" type="button">Start sound</button>
   <select id="patch"><option value="bass">Bass</option><option value="pwm">PWM lead</option><option value="whistle">Resonant whistle</option></select>
-  <button id="hold" type="button" title="Keep notes sounding after release">Hold</button>
+  <button id="keysToggle" type="button">Hide keys</button>
   <select id="midi"><option value="">MIDI: none</option></select>
 </div>
 <div id="status">Tap "Start sound" first. Sound needs a tap on most phones.</div>
@@ -87,7 +98,7 @@
       { t: "group", key: "arpMode", label: "Arp", values: ["off", "up", "updown", "down"], labels: ["Off", "Up", "U&D", "Down"] },
       { t: "slider", kind: "patch", id: "arpBpm", key: "arpBpm", label: "Arp tempo",
         map: { to: v => 60 + 180 * v, from: p => clamp01((p - 60) / 180) }, fmt: p => Math.round(p) + " BPM" },
-      { t: "toggle", key: "legato", label: "Legato" },
+      { t: "row", items: [ { t: "toggle", key: "legato", label: "Legato" }, { t: "hold" } ] },
       { t: "group", key: "transpose", label: "Transpose", values: [0, 12, 24], labels: ["L", "M", "H"] },
     ]},
     { title: "Modulator", items: [
@@ -100,8 +111,10 @@
       { t: "slider", kind: "patch", id: "vibMax", key: "vibMax", label: "MOD depth",
         map: { to: v => v * 0.1, from: p => clamp01(p / 0.1) }, fmt: p => p.toFixed(3) + " st" },
       { t: "group", key: "rangeOct", label: "Range", values: [-1, 0, 1, 2], labels: ["16'", "8'", "4'", "2'"] },
-      { t: "slider", kind: "pwm", id: "pwm", label: "Pulse width" },
-      { t: "group", key: "pwmSrc", label: "PWM source", values: ["env", "lfo", "man"], labels: ["ENV", "LFO", "MAN"] },
+      { t: "row", cls: "hrow", items: [
+        { t: "slider", kind: "pwm", id: "pwm", label: "Pulse width", vertical: true },
+        { t: "group", key: "pwmSrc", label: "PWM source", values: ["env", "lfo", "man"], labels: ["ENV", "LFO", "MAN"], stack: true },
+      ] },
     ]},
     { title: "Source mixer", items: [
       { t: "slider", kind: "patch", id: "wPulse", key: "wPulse", label: "Pulse", map: LIN, fmt: fmtPct },
@@ -205,10 +218,17 @@
     return buildKnob({ id: it.id, label: it.label, def, fmt: v => it.fmt(it.map.to(v)) });
   }
   function makeSlider(it) {
-    const row = document.createElement("div"); row.className = "sl";
-    row.innerHTML = `<label for="c-${it.id}">${it.label}</label>` +
-      `<input type="range" id="c-${it.id}" min="${it.min ?? 0}" max="${it.max ?? 1}" step="0.001">` +
-      `<output></output>`;
+    const row = document.createElement("div");
+    if (it.vertical) {
+      row.className = "vsl";
+      row.innerHTML = `<label for="c-${it.id}">${it.label}</label><div class="vbox">` +
+        `<input type="range" id="c-${it.id}" min="0" max="1" step="0.001"></div><output></output>`;
+    } else {
+      row.className = "sl";
+      row.innerHTML = `<label for="c-${it.id}">${it.label}</label>` +
+        `<input type="range" id="c-${it.id}" min="${it.min ?? 0}" max="${it.max ?? 1}" step="0.001">` +
+        `<output></output>`;
+    }
     const input = row.querySelector("input"), out = row.querySelector("output");
     const c = { it, input, out };
     ctrl[it.id] = c;
@@ -222,7 +242,7 @@
   }
   function makeGroup(it) {
     const wrap = document.createElement("div"); wrap.className = "grp";
-    wrap.innerHTML = `<div class="cap">${it.label}</div><div class="seg"></div>`;
+    wrap.innerHTML = `<div class="cap">${it.label}</div><div class="seg${it.stack ? " stack" : ""}"></div>`;
     const seg = wrap.querySelector(".seg");
     const btns = it.values.map((val, i) => {
       const b = document.createElement("button"); b.type = "button"; b.textContent = it.labels[i];
@@ -233,6 +253,14 @@
     groups[it.key] = { values: it.values, btns };
     return wrap;
   }
+  function makeHold() {
+    const wrap = document.createElement("div"); wrap.className = "grp";
+    const b = document.createElement("button"); b.type = "button"; b.id = "hold";
+    b.textContent = "Hold"; b.title = "Keep notes sounding after release";
+    b.addEventListener("click", () => setHold(!holdOn));
+    wrap.appendChild(b);
+    return wrap;
+  }
   function makeToggle(it) {
     const wrap = document.createElement("div"); wrap.className = "grp";
     const b = document.createElement("button"); b.type = "button"; b.textContent = it.label;
@@ -240,6 +268,12 @@
     wrap.appendChild(b);
     toggles[it.key] = b;
     return wrap;
+  }
+  function buildItem(it) {
+    if (it.t === "slider") return makeSlider(it);
+    if (it.t === "group") return makeGroup(it);
+    if (it.t === "hold") return makeHold();
+    return makeToggle(it);
   }
   function buildPanels() {
     const root = $("#panels");
@@ -254,7 +288,13 @@
           continue;
         }
         knobRow = null;
-        box.appendChild(it.t === "slider" ? makeSlider(it) : it.t === "group" ? makeGroup(it) : makeToggle(it));
+        if (it.t === "row") {
+          const r = document.createElement("div"); r.className = it.cls || "inline";
+          for (const sub of it.items) r.appendChild(buildItem(sub));
+          box.appendChild(r);
+        } else {
+          box.appendChild(buildItem(it));
+        }
       }
       root.appendChild(box);
     }
@@ -310,6 +350,10 @@
   };
   keysEl.addEventListener("pointerup", fingerUp);
   keysEl.addEventListener("pointercancel", fingerUp);
+  $("#keysToggle").addEventListener("click", () => {
+    const folded = keysEl.classList.toggle("folded");
+    $("#keysToggle").textContent = folded ? "Show keys" : "Hide keys";
+  });
 
   // ---------- hold ----------
   function setHold(on) {
@@ -317,7 +361,6 @@
     $("#hold").classList.toggle("on", holdOn);
     postMsg({ type: "hold", on: holdOn });
   }
-  $("#hold").addEventListener("click", () => setHold(!holdOn));
 
   // ---------- audio ----------
   const WORKLET = `
