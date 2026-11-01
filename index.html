@@ -36,12 +36,14 @@
   .inline > .grp { margin: 6px 0; flex: 0 0 auto; }
   .hrow { display: flex; gap: 12px; align-items: flex-start; margin: 6px 0; }
   .hrow > .grp { flex: 1 1 auto; min-width: 0; margin: 6px 0; }
+  .hrow > .grp.stackgrp { flex: 0 0 auto; }   /* stacked buttons hug their labels */
   .vsl { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 0 0 auto; font-size: 14px; }
   .vsl .vbox { position: relative; width: 36px; height: 150px; }
   .vsl .vbox input { position: absolute; left: -57px; top: 57px; width: 150px; height: 36px; transform: rotate(-90deg); margin: 0; }
   .vsl output { color: #aaa; font-size: 12px; font-variant-numeric: tabular-nums; }
-  .seg.stack { flex-direction: column; flex-wrap: nowrap; }
-  .seg.stack button { flex: 0 0 auto; }
+  /* stacked buttons: one column sized to the widest label; every button stretches to that width */
+  .seg.stack { display: inline-grid; grid-template-columns: max-content; gap: 6px; }
+  .seg.stack button { flex: none; }
   .knobs { display: flex; flex-wrap: wrap; justify-content: space-around; gap: 6px 4px; margin: 6px 0; }
   /* AcidBox knob styles. The colours are CSS variables, so a skin only has to set these: */
 :root {
@@ -609,7 +611,7 @@ function buildKnob(k) {
     return row;
   }
   function makeGroup(it) {
-    const wrap = document.createElement("div"); wrap.className = "grp";
+    const wrap = document.createElement("div"); wrap.className = "grp" + (it.stack ? " stackgrp" : "");
     wrap.innerHTML = `<div class="cap">${it.label}</div><div class="seg${it.stack ? " stack" : ""}"></div>`;
     const seg = wrap.querySelector(".seg");
     const btns = it.values.map((val, i) => {
