@@ -6,70 +6,69 @@
 <title>SH-101 emulator</title>
 <style>
   :root { color-scheme: dark; }
-  body { margin: 0; font-family: system-ui, sans-serif; background: #1d1d1f; color: #eee; padding: 12px; box-sizing: border-box; padding-bottom: env(safe-area-inset-bottom, 12px); }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, sans-serif; background: #1d1d1f; color: #eee; padding: 12px; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); overflow-x: hidden; }
   h1 { font-size: 20px; margin: 4px 0 8px; }
-  button, select { font: inherit; background: #333; color: #eee; border: 1px solid #555; border-radius: 8px; padding: 10px 12px; }
-  button.on { background: #b5651d; }
+  button, select { font: inherit; background: #333; color: #eee; border: 1px solid #555; border-radius: 8px; padding: 8px 10px; }
+  button.on { background: #b5651d; border-color: #b5651d; }
+  input[type=range] { width: 100%; min-width: 0; margin: 0; }
   .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
-  .panel { background: #26262a; border-radius: 10px; padding: 8px; margin: 8px 0; }
-  .sl { display: grid; grid-template-columns: 110px 1fr 44px; align-items: center; gap: 8px; margin: 6px 0; font-size: 14px; }
-  .sl input { width: 100%; }
-  .sl span.v { text-align: right; color: #aaa; font-variant-numeric: tabular-nums; }
-  #keys { position: relative; height: 150px; user-select: none; touch-action: none; margin: 8px 0; }
+  #status { font-size: 13px; color: #9c9; min-height: 18px; }
+  #debug { font-size: 12px; color: #888; min-height: 16px; }
+  .warn { color: #e9a; }
+  #keys { position: relative; height: 150px; user-select: none; touch-action: none; margin: 8px 0 12px; }
   .wk, .bk { position: absolute; top: 0; box-sizing: border-box; border: 1px solid #111; border-radius: 0 0 6px 6px; }
   .wk { background: #f2f2f2; height: 100%; color: #333; }
   .bk { background: #111; height: 60%; color: #eee; z-index: 2; }
   .on-k { background: #f0a040 !important; }
   .lbl { position: absolute; bottom: 4px; width: 100%; text-align: center; font-size: 10px; pointer-events: none; }
-  #status { font-size: 13px; color: #9c9; min-height: 18px; }
-  .warn { color: #e9a; }
+  #panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 8px; }
+  .panel { background: #26262a; border-radius: 10px; padding: 8px 10px 10px; min-width: 0; }
+  .panel h2 { font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: #f0a040; margin: 2px 0 6px; }
+  .sl { display: grid; grid-template-columns: 84px minmax(0, 1fr) 84px; align-items: center; gap: 8px; margin: 6px 0; font-size: 14px; }
+  .sl output { text-align: right; color: #aaa; font-variant-numeric: tabular-nums; font-size: 12px; }
+  .grp { margin: 8px 0; }
+  .grp .cap { color: #aaa; font-size: 13px; margin-bottom: 4px; }
+  .seg { display: flex; flex-wrap: wrap; gap: 6px; }
+  .seg button, .grp > button { flex: 1 1 auto; padding: 8px 6px; font-size: 13px; }
+  .knobs { display: flex; flex-wrap: wrap; justify-content: space-around; gap: 6px 4px; margin: 6px 0; }
+  /* AcidBox knob styles. The colours are CSS variables, so a skin only has to set these: */
+:root {
+  --track: rgba(240, 207, 62, 0.22);   /* empty part of the ring */
+  --led: #FF5B40;                      /* filled part of the ring */
+  --knob-body: #F0CF3E;                /* the dial */
+  --knob-mark: #121935;                /* the pointer line */
+  --ink: #F0CF3E;
+  --ink-soft: #A9A487;
+}
+
+.knob {
+  display: flex; flex-direction: column; align-items: center;
+  touch-action: none; user-select: none; -webkit-user-select: none;
+  cursor: ns-resize; border-radius: 14px; padding: 2px 0;
+}
+.knob svg { width: 64px; height: 64px; max-width: 100%; display: block; }
+.klabel { font-size: 14px; font-weight: 600; margin-top: 2px; }
+.kval { font-size: 12px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+
+  footer { color: #777; font-size: 12px; margin: 16px 0 0; }
 </style>
 </head>
 <body>
 <h1>SH-101 emulator</h1>
 <div class="row">
-  <button id="start">Start sound</button>
+  <button id="start" type="button">Start sound</button>
   <select id="patch"><option value="bass">Bass</option><option value="pwm">PWM lead</option><option value="whistle">Resonant whistle</option></select>
-  <select id="range"><option value="-1">16'</option><option value="0" selected>8'</option><option value="1">4'</option><option value="2">2'</option></select>
+  <button id="hold" type="button" title="Keep notes sounding after release">Hold</button>
   <select id="midi"><option value="">MIDI: none</option></select>
 </div>
 <div id="status">Tap "Start sound" first. Sound needs a tap on most phones.</div>
-<div id="debug" style="font-size:12px;color:#888;min-height:16px"></div>
+<div id="debug"></div>
 
 <div id="keys"></div>
 
-<div class="panel">
-  <div class="sl"><label>Cutoff</label><input id="cutoff" type="range" min="0" max="1" step="0.01" value="0.5"><span class="v"></span></div>
-  <div class="sl"><label>Resonance</label><input id="res" type="range" min="0" max="1" step="0.01" value="0.4"><span class="v"></span></div>
-  <div class="sl"><label>Env to filter</label><input id="envAmt" type="range" min="0" max="1" step="0.01" value="0.6"><span class="v"></span></div>
-  <div class="sl"><label>Attack</label><input id="attack" type="range" min="0" max="1" step="0.01" value="0.05"><span class="v"></span></div>
-  <div class="sl"><label>Decay</label><input id="decay" type="range" min="0" max="1" step="0.01" value="0.4"><span class="v"></span></div>
-  <div class="sl"><label>Sustain</label><input id="sustain" type="range" min="0" max="1" step="0.01" value="0.35"><span class="v"></span></div>
-  <div class="sl"><label>Release</label><input id="release" type="range" min="0" max="1" step="0.01" value="0.3"><span class="v"></span></div>
-</div>
-<div class="panel">
-  <div class="row">
-    <label>Arp</label>
-    <select id="arpMode"><option value="off">Off</option><option value="up">Up</option><option value="down">Down</option><option value="updown">Up/Down</option></select>
-    <label>Legato <input id="legato" type="checkbox"></label>
-    <label>Transpose</label>
-    <select id="transpose"><option value="0">L (0)</option><option value="12">M (+1 oct)</option><option value="24">H (+2 oct)</option></select>
-  </div>
-  <div class="sl"><label>Arp tempo</label><input id="arpBpm" type="range" min="0" max="1" step="0.01" value="0.33"><span class="v"></span></div>
-  <div class="sl"><label>Portamento</label><input id="portaTime" type="range" min="0" max="1" step="0.01" value="0"><span class="v"></span></div>
-  <div class="sl"><label>Mod wheel</label><input id="modWheel" type="range" min="0" max="1" step="0.01" value="0"><span class="v"></span></div>
-  <div class="sl"><label>Bender</label><input id="bender" type="range" min="-1" max="1" step="0.01" value="0"><span class="v"></span></div>
-</div>
-<div class="panel">
-  <div class="sl"><label>Saw</label><input id="wSaw" type="range" min="0" max="1" step="0.01" value="1"><span class="v"></span></div>
-  <div class="sl"><label>Pulse</label><input id="wPulse" type="range" min="0" max="1" step="0.01" value="0"><span class="v"></span></div>
-  <div class="sl"><label>Pulse width</label><input id="pw" type="range" min="0" max="1" step="0.01" value="0.5"><span class="v"></span></div>
-  <div class="sl"><label>PWM depth</label><input id="pwmAmt" type="range" min="0" max="1" step="0.01" value="0.25"><span class="v"></span></div>
-  <div class="sl"><label>Sub</label><input id="wSub" type="range" min="0" max="1" step="0.01" value="0"><span class="v"></span></div>
-  <div class="sl"><label>Noise</label><input id="wNoise" type="range" min="0" max="1" step="0.01" value="0"><span class="v"></span></div>
-  <div class="sl"><label>Vibrato</label><input id="vibMax" type="range" min="0" max="0.1" step="0.001" value="0"><span class="v"></span></div>
-  <div class="sl"><label>Volume</label><input id="volume" type="range" min="0" max="1" step="0.01" value="0.8"><span class="v"></span></div>
-</div>
+<div id="panels"></div>
+<footer>Built from docs/sh101_core.js by tools/build_index.js. Edit the core or the template, then rebuild.</footer>
 
 <script>
 /* SH-101 emulator core (JavaScript port of sh101_engine.py). Same models and guesses (G36-G44).
@@ -83,11 +82,24 @@
 
   const kcv = (m) => 0.417 + (m - 53) / 12.0;  // service manual: F3 = 0.417 V, 1 V/oct
   function bus(p) { return CUT_MIN + p * (CUT_MAX - CUT_MIN); }
-  function cutoffHz(midi, p) {
-    const v9 = PIN9 * (bus(p) - KYB * (kcv(midi) - kcv(60)));
+  function cutoffHz(midi, p, follow) {
+    const f = follow === undefined ? 1 : follow;               // Key Follow knob, 0..1 (Roland spec)
+    const v9 = PIN9 * (bus(p) - f * KYB * (kcv(midi) - kcv(60)));
     return K4 * FC0 * Math.pow(2, -v9 / VC);
   }
-  function noteHz(midi, rangeOct) { return A4 * Math.pow(2, (midi - 69) / 12) * Math.pow(2, rangeOct); }
+  // Seeded PRNG (mulberry32). Gives repeatable noise, so renders are identical run to run.
+  // The seed is fixed (DEFAULT.seed) and not exposed on the panel yet.
+  function makeRng(seed) {
+    let a = seed >>> 0;
+    return function () {
+      a = (a + 0x6D2B79F5) >>> 0;
+      let t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;   // [0, 1)
+    };
+  }
+  function noteHz(midi, rangeOct, cents) { return A4 * Math.pow(2, (midi - 69) / 12) * Math.pow(2, rangeOct) * Math.pow(2, (cents || 0) / 1200); }
 
   function blep(t, dt) {
     if (t < dt) { const x = t / dt; return 2 * x - x * x - 1; }
@@ -122,25 +134,33 @@
     attackPwm: 0.01, decayPwm: 0.2, pw: 0.5, pwmAmt: 0.25,
     wSaw: 1, wPulse: 0, wSub: 0, wNoise: 0, cutoff: 0.5, res: 0.4, envAmt: 0.6,
     lfoRate: 5.0, lfoCut: 0, vibMax: 0, vcaGate: false, volume: 0.8,
-    // new performance features
-    legato: false,          // new note while holding: change pitch, do not retrigger envelopes
-    portaTime: 0,           // portamento glide time in seconds, 0..5 (service manual range)
-    transpose: 0,           // semitones: 0 (L), 12 (M), 24 (H). Manual: M = +1 V, H = +2 V of KCV
-    arpMode: "off",         // "off" | "up" | "down" | "updown"
-    arpBpm: 120 };          // arpeggio clock; steps are sixteenth notes (G45)
+    legato: false, portaTime: 0, transpose: 0, arpMode: "off", arpBpm: 120,
+    // switches (G50-G54)
+    lfoWave: "triangle",    // "square" | "triangle" | "noise" | "random"
+    vcoWave: "both",        // not a Roland switch: the source mixer levels control saw and pulse (G51 corrected)
+    subOct: "1",            // "1" = square 1 oct down, "2" = square 2 oct down, "2p" = pulse 2 oct down (panel, G62)
+    vcaMode: "ENV",         // "ENV" | "GATE"
+    envTrig: "gate",        // "gate" | "gatetrig" | "lfo"
+    pwmSrc: "env",          // PWM source: "env" | "lfo" | "man" (panel switch LFO / MAN / ENV, G56)
+    portaMode: "auto",      // portamento: "auto" | "off" | "on" (panel AUTO / OFF / ON, G57)
+    keyFollow: 1,           // KYBD / Key Follow slider, 0..1
+    tuneCents: 0,           // TUNE knob, +-50 cents
+    vcoBend: 1,             // Bend VCO slider: 1 = +-2 semitones at full lever
+    vcfBend: 0,             // Bend VCF slider: 1 = +-1 octave at full lever (G69)
+    seed: 101 };            // noise seed (fixed for now; not on the panel)
 
   class Voice {
     constructor(fs, patch) {
       this.fs = fs; this.p = Object.assign({}, DEFAULT, patch || {});
-      this.stack = []; this.midi = null; this.mod = 0; this.bend = 0;
-      this.resCC = null; this.cutCC = null;
-      this.ph = 0; this.phSub = 0; this.phLfo = 0;
+      this.stack = []; this.physical = new Set(); this.hold = false;
+      this.midi = null; this.mod = 0; this.resCC = null; this.cutCC = null;
+      this.ph = 0; this.phSub = 0; this.phLfo = 0; this.lfoHold = 0; this.bendNorm = 0;
       this.pwmEnv = new Env(fs, this.p.attackPwm, this.p.decayPwm, 0, this.p.release);
       this.ampEnv = new Env(fs, this.p.attack, this.p.decay, this.p.sustain, this.p.release);
-      this.y = [0, 0, 0, 0]; this.baseCut = 0; this.gateNow = 0;
-      this.pitch = null;          // current pitch in semitones (glides for portamento)
-      this.target = null;         // target pitch in semitones (transposed MIDI note)
+      this.y = [0, 0, 0, 0]; this.baseCut = 0;
+      this.pitch = null; this.target = null; this.glideAllowed = false;
       this.arpIdx = 0; this.arpDir = 1; this.arpCount = 0; this.arpGateAt = 0; this.arpFirst = false;
+      this.rand = makeRng(this.p.seed);
     }
     rebuildEnvs() {
       this.pwmEnv = new Env(this.fs, this.p.attackPwm, this.p.decayPwm, 0, this.p.release);
@@ -148,36 +168,56 @@
     }
     setPatch(patch) {
       this.p = Object.assign({}, this.p, patch);
-      const p = this.p;                     // update envelopes in place so a held note keeps sounding
+      const p = this.p;
       this.pwmEnv.setParams(p.attackPwm, p.decayPwm, 0, p.release);
       this.ampEnv.setParams(p.attack, p.decay, p.sustain, p.release);
       if (this.midi !== null) this.play(this.midi, false);
     }
-    arpSteps() { return Math.max(1, Math.round(this.fs * 60 / this.p.arpBpm / 4)); }   // sixteenths
-    /* Set the sounding note. retrigger restarts the envelopes (not for legato or glide). */
+    arpSteps() { return Math.max(1, Math.round(this.fs * 60 / this.p.arpBpm / 4)); }
     play(midi, retrigger) {
       const eff = midi + this.p.transpose;
-      this.midi = midi;                                    // played key (for display/arp bookkeeping)
-      this.target = eff;
+      this.midi = midi; this.target = eff;
       if (this.pitch === null) this.pitch = eff;
       const pos = this.cutCC !== null ? this.cutCC : this.p.cutoff;
-      this.baseCut = cutoffHz(eff, pos);                   // keyboard tracking uses the transposed pitch
-      if (retrigger) { this.ampEnv.on(); this.pwmEnv.on(); }
+      this.baseCut = cutoffHz(eff, pos, this.p.keyFollow);
+      if (retrigger && this.p.envTrig !== "lfo") { this.ampEnv.on(); this.pwmEnv.on(); }
     }
     noteOn(midi) {
+      this.physical.add(midi);
       const i = this.stack.indexOf(midi); if (i >= 0) this.stack.splice(i, 1);
       const hadNotes = this.stack.length > 0;
       this.stack.push(midi);
       if (this.p.arpMode !== "off") {
-        if (!hadNotes) { this.arpCount = this.arpSteps(); this.arpFirst = true; }   // first key starts the arpeggio at once
+        if (!hadNotes) { this.arpCount = this.arpSteps(); this.arpFirst = true; }
         return;
       }
-      this.play(midi, !(this.p.legato && hadNotes));
+      const retrig = this.p.envTrig === "gatetrig" ? true : !(this.p.legato && hadNotes);
+      // portamento: ON glides every note; AUTO glides only when a key is played while others are held; OFF never
+      this.glideAllowed = this.p.portaMode === "on" || (this.p.portaMode === "auto" && hadNotes);
+      this.play(midi, retrig);
     }
     noteOff(midi) {
+      this.physical.delete(midi);
+      if (this.hold) return;                                // hold keeps the notes sounding
+      this.release(midi);
+    }
+    release(midi) {
       const i = this.stack.indexOf(midi); if (i >= 0) this.stack.splice(i, 1);
-      if (this.stack.length === 0) { this.ampEnv.off(); this.pwmEnv.off(); this.arpCount = 0; return; }
+      if (this.stack.length === 0) {
+        if (this.p.envTrig !== "lfo") { this.ampEnv.off(); this.pwmEnv.off(); }
+        this.arpCount = 0; return;
+      }
       if (this.p.arpMode === "off" && midi === this.midi) this.play(this.stack[this.stack.length - 1], false);
+    }
+    setHold(on) {
+      this.hold = !!on;
+      if (!this.hold) {                                     // releasing hold lets go of keys that are no longer down
+        const keep = this.stack.filter(m => this.physical.has(m));
+        const dropped = this.stack.filter(m => !this.physical.has(m));
+        this.stack = keep;
+        if (this.stack.length === 0) { if (this.p.envTrig !== "lfo") { this.ampEnv.off(); this.pwmEnv.off(); } this.arpCount = 0; }
+        else if (dropped.length && this.p.arpMode === "off" && this.midi !== null && !keep.includes(this.midi)) this.play(keep[keep.length - 1], false);
+      }
     }
     control(cc, value) {
       const v = value / 127;
@@ -185,19 +225,15 @@
       else if (cc === 71) this.resCC = v;
       else if (cc === 74) { this.cutCC = v; if (this.midi !== null) this.play(this.midi, false); }
     }
-    pitchBend(value) { this.bend = 2 * value / 8192; }   // value -8192..8191 -> semitones
+    pitchBend(value) { this.bendNorm = Math.max(-1, Math.min(1, value / 8192)); }
 
-    /* Arpeggiator: advance one sixteenth at a time through the held notes (G45). */
     arpAdvance() {
       const notes = this.stack.slice().sort((a, b) => a - b);
-      const n = notes.length;
-      const mode = this.p.arpMode;
-      if (this.arpFirst) {                                 // first step plays the lowest (up, updown) or highest (down) note
-        this.arpFirst = false; this.arpDir = 1;
-        this.arpIdx = mode === "down" ? n - 1 : 0;
-      } else if (mode === "up") this.arpIdx = (this.arpIdx + 1) % n;
+      const n = notes.length, mode = this.p.arpMode;
+      if (this.arpFirst) { this.arpFirst = false; this.arpDir = 1; this.arpIdx = mode === "down" ? n - 1 : 0; }
+      else if (mode === "up") this.arpIdx = (this.arpIdx + 1) % n;
       else if (mode === "down") this.arpIdx = (this.arpIdx - 1 + n) % n;
-      else {                                              // updown: bounce without repeating the ends
+      else {
         if (n > 1) {
           this.arpIdx += this.arpDir;
           if (this.arpIdx >= n - 1) { this.arpIdx = n - 1; this.arpDir = -1; }
@@ -208,40 +244,57 @@
       this.play(notes[this.arpIdx], true);
     }
 
-    /* Render n samples into out. */
     render(out, n) {
       const p = this.p, fs = this.fs;
-      if (this.ampEnv.stage === 0 && this.stack.length === 0) { for (let i = 0; i < n; i++) out[i] = 0; return; }
+      if (this.stack.length === 0 && this.ampEnv.stage === 0) { for (let i = 0; i < n; i++) out[i] = 0; return; }
       if (this.midi === null && this.stack.length === 0) { for (let i = 0; i < n; i++) out[i] = 0; return; }
       const res = this.resCC !== null ? this.resCC : p.res;
-      const k = Math.min(4.2 * res / 0.785, 5.0);          // G41
+      const k = Math.min(4.2 * res / 0.785, 5.0);
       const vib = this.mod * p.vibMax;
       const gateOn = this.stack.length > 0 ? 1 : 0;
       const glideCoef = p.portaTime > 0 ? 1 - Math.exp(-1 / (fs * Math.max(p.portaTime / 3, 1e-4))) : 1;
       const arpOn = p.arpMode !== "off" && this.stack.length > 0;
       const stepLen = this.arpSteps();
+      const sawOn = p.vcoWave !== "pulse" ? 1 : 0, pulseOn = p.vcoWave !== "saw" ? 1 : 0;
+      const subDiv = (p.subOct === "2" || p.subOct === "2p") ? 4 : 2, subOn = 1;
+      const subPulse = p.subOct === "2p";
+      const gateMode = p.vcaMode === "GATE" || p.vcaGate;
       for (let i = 0; i < n; i++) {
-        if (arpOn) {                                          // arpeggiator clock
+        if (arpOn) {
           this.arpCount++;
           if (this.arpCount >= stepLen) { this.arpCount = 0; this.arpGateAt = Math.round(stepLen * 0.6); this.arpAdvance(); }
           if (this.arpCount === this.arpGateAt) { this.ampEnv.off(); this.pwmEnv.off(); }
         }
-        if (this.pitch !== null && this.target !== null) this.pitch += (this.target - this.pitch) * glideCoef;
-        const ph = this.phLfo; this.phLfo = (ph + p.lfoRate / fs) % 1;
-        const lfo = 2 * Math.abs(2 * ph - 1) - 1;                   // G43 triangle
+        if (this.pitch !== null && this.target !== null) {
+          if (this.glideAllowed && p.portaTime > 0) this.pitch += (this.target - this.pitch) * glideCoef;
+          else this.pitch = this.target;
+        }
+        const ph0 = this.phLfo;
+        this.phLfo = (ph0 + p.lfoRate / fs) % 1;
+        const wrapped = this.phLfo < ph0;
+        if (wrapped) this.lfoHold = this.rand() * 2 - 1;      // random: new level each LFO cycle
+        if (wrapped && p.envTrig === "lfo") { this.ampEnv.on(); this.pwmEnv.on(); }
+        let lfo;
+        if (p.lfoWave === "square") lfo = this.phLfo < 0.5 ? 1 : -1;
+        else if (p.lfoWave === "noise") lfo = this.rand() * 2 - 1;
+        else if (p.lfoWave === "random") lfo = this.lfoHold;
+        else lfo = 2 * Math.abs(2 * this.phLfo - 1) - 1;        // triangle (G43)
         const envPwm = this.pwmEnv.next();
         const env = this.ampEnv.next();
-        const f = noteHz(this.pitch === null ? 69 : this.pitch, p.rangeOct) * Math.pow(2, (vib * lfo + this.bend) / 12);
+        const f = noteHz(this.pitch === null ? 69 : this.pitch, p.rangeOct, p.tuneCents) * Math.pow(2, (vib * lfo + 2 * this.bendNorm * p.vcoBend) / 12);
         const dt = f / fs;
         this.ph = (this.ph + dt) % 1; const t = this.ph;
-        this.phSub = (this.phSub + dt / 2) % 1; const ts = this.phSub;
-        const duty = Math.min(0.98, Math.max(0.02, 0.5 * p.pw + p.pwmAmt * envPwm));
+        this.phSub = (this.phSub + dt / subDiv) % 1; const ts = this.phSub;
+        const pwmMod = p.pwmSrc === "env" ? envPwm : p.pwmSrc === "lfo" ? lfo : 0;   // MAN = no modulation
+        const duty = Math.min(0.98, Math.max(0.02, 0.5 * p.pw + p.pwmAmt * pwmMod));
         const saw = 2 * t - 1 - blep(t, dt);
         const pulse = (t < duty ? 1 : -1) - blep(t, dt) + blep((t - duty + 1) % 1, dt);
-        const sub = (ts < 0.5 ? 1 : -1) - blep(ts, dt / 2) + blep((ts - 0.5 + 1) % 1, dt / 2);
-        const noise = Math.random() * 2 - 1;
-        const src = p.wSaw * MIX.saw * saw + p.wPulse * MIX.pulse * pulse + p.wSub * MIX.sub * sub + p.wNoise * MIX.noise * noise;
-        const cut = this.baseCut * Math.pow(2, p.envAmt * 4.0 * env + p.lfoCut * lfo);   // G40
+        const subDuty = subPulse ? 0.25 : 0.5;                 // G62: pulse sub taken as 25% width
+        const sub = (ts < subDuty ? 1 : -1) - blep(ts, dt / subDiv) + blep((ts - subDuty + 1) % 1, dt / subDiv);
+        const noise = this.rand() * 2 - 1;
+        const src = sawOn * p.wSaw * MIX.saw * saw + pulseOn * p.wPulse * MIX.pulse * pulse
+                  + subOn * p.wSub * MIX.sub * sub + p.wNoise * MIX.noise * noise;
+        const cut = this.baseCut * Math.pow(2, p.envAmt * 4.0 * env + p.lfoCut * lfo + this.bendNorm * p.vcfBend);
         const g = 1 - Math.exp(-2 * Math.PI * Math.min(Math.max(cut, 20), fs * 0.45) / fs);
         const x = src * 0.5;
         const y = this.y;
@@ -250,7 +303,7 @@
         y[1] += g * (Math.tanh(y[0]) - y[1]);
         y[2] += g * (Math.tanh(y[1]) - y[2]);
         y[3] += g * (Math.tanh(y[2]) - y[3]);
-        const gain = p.vcaGate ? gateOn : env;                        // G44 linear VCA
+        const gain = gateMode ? gateOn : env;                   // G44 / VCA switch
         out[i] = y[3] * gain * p.volume;
       }
     }
@@ -268,66 +321,326 @@
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.SH101 = api;
 })(typeof globalThis !== "undefined" ? globalThis : (typeof self !== "undefined" ? self : this));
+</script>
 
+<script>
+// AcidBox knob: a rotary dial that reads and writes one setting.
+//
+// Needs these from the surrounding app:
+//   state.params           object holding each setting's current value (0 to 1), keyed by id
+//   setParam(id, value)    stores the new value and sends it to the sound engine
+//
+// Usage:
+//   document.body.appendChild(buildKnob({ id: 'cutoff', label: 'Cutoff', def: 0.35 }));
+//   buildKnob({ id, label, def, fmt })
+//     id     the setting this knob controls
+//     label  text shown under the dial
+//     def    default value (0 to 1), used for double-click or double-tap reset
+//     fmt    optional: turns a 0..1 value into display text, e.g. v => Math.round(v * 100) + '%'
+
+const A0 = Math.PI * 0.75, SPAN = Math.PI * 1.5;   // dial runs from 7:30 to 4:30, 270 degrees
+
+function arc(r, a0, a1) {
+  const x0 = 32 + r * Math.cos(a0), y0 = 32 + r * Math.sin(a0);
+  const x1 = 32 + r * Math.cos(a1), y1 = 32 + r * Math.sin(a1);
+  return `M${x0.toFixed(2)} ${y0.toFixed(2)} A${r} ${r} 0 ${a1 - a0 > Math.PI ? 1 : 0} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`;
+}
+
+const clamp = v => Math.min(1, Math.max(0, v));
+const knobDraw = {};   // redraws every knob bound to a setting, by setting id
+
+function buildKnob(k) {
+  const el = document.createElement('div');
+  el.className = 'knob';
+  el.dataset.pid = k.id;
+  el.tabIndex = 0;
+  el.setAttribute('role', 'slider');
+  el.setAttribute('aria-label', k.label);
+  el.setAttribute('aria-valuemin', '0');
+  el.setAttribute('aria-valuemax', '100');
+  el.innerHTML = `<svg viewBox="0 0 64 64" aria-hidden="true">
+      <path d="${arc(28, A0, A0 + SPAN)}" fill="none" stroke="var(--track)" stroke-width="4" stroke-linecap="round"/>
+      <path class="val" fill="none" stroke="var(--led)" stroke-width="4" stroke-linecap="round"/>
+      <circle cx="32" cy="32" r="21" fill="var(--knob-body)"/>
+      <line class="ind" x1="32" y1="32" stroke="var(--knob-mark)" stroke-width="3.5" stroke-linecap="round"/>
+    </svg><span class="klabel">${k.label}</span><span class="kval"></span>`;
+
+  const valPath = el.querySelector('.val'), ind = el.querySelector('.ind'), out = el.querySelector('.kval');
+  const fmt = k.fmt || (v => Math.round(v * 100));
+
+  function draw() {
+    const v = state.params[k.id], a = A0 + v * SPAN;
+    valPath.setAttribute('d', v > 0.004 ? arc(28, A0, a) : '');   // the filled part of the ring
+    ind.setAttribute('x2', (32 + 16 * Math.cos(a)).toFixed(2));  // the pointer
+    ind.setAttribute('y2', (32 + 16 * Math.sin(a)).toFixed(2));
+    out.textContent = fmt(v);
+    el.setAttribute('aria-valuenow', Math.round(v * 100));
+    el.setAttribute('aria-valuetext', String(fmt(v)));
+  }
+
+  function set(v) { setParam(k.id, clamp(v)); knobDraw[k.id](); }
+
+  // drag up or down to change; hold Shift for fine control
+  let startY = 0, startV = 0, dragging = false, pendingV = null;
+  el.addEventListener('pointerdown', e => {
+    dragging = true; startY = e.clientY; startV = state.params[k.id];
+    el.setPointerCapture(e.pointerId); e.preventDefault();
+  });
+  el.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    const v = startV + (startY - e.clientY) / (e.shiftKey ? 700 : 180);
+    // phones can fire 120+ moves a second; apply at most one per screen frame
+    if (pendingV === null) requestAnimationFrame(() => { const x = pendingV; pendingV = null; set(x); });
+    pendingV = v;
+  });
+  const end = () => { dragging = false; };
+  el.addEventListener('pointerup', end);
+  el.addEventListener('pointercancel', end);
+
+  // double-click or double-tap resets to the default
+  el.addEventListener('dblclick', () => set(k.def));
+  let lastTap = 0;
+  el.addEventListener('pointerup', e => {
+    if (e.pointerType !== 'touch') return;
+    const now = Date.now();
+    if (now - lastTap < 300 && Math.abs(e.clientY - startY) < 6) set(k.def);
+    lastTap = now;
+  });
+
+  // keyboard: arrows nudge, PageUp/PageDown jump, Home and End go to the ends
+  el.addEventListener('keydown', e => {
+    const v = state.params[k.id];
+    const steps = { ArrowUp: 0.01, ArrowRight: 0.01, ArrowDown: -0.01, ArrowLeft: -0.01, PageUp: 0.1, PageDown: -0.1 };
+    if (e.key in steps) { set(v + steps[e.key]); e.preventDefault(); }
+    else if (e.key === 'Home') { set(0); e.preventDefault(); }
+    else if (e.key === 'End') { set(1); e.preventDefault(); }
+  });
+
+  draw();
+  // several knobs can share one setting, so keep them all in step
+  const prev = knobDraw[k.id];
+  knobDraw[k.id] = prev ? () => { prev(); draw(); } : draw;
+  return el;
+}
 </script>
 
 <script>
 (function () {
-  const SH = (typeof SH101 !== "undefined") ? SH101 : null;
-  const statusEl = document.getElementById("status");
+  "use strict";
+  const SH = window.SH101;
+  const $ = s => document.querySelector(s);
+  const statusEl = $("#status"), dbg = $("#debug");
   const say = (t, warn) => { statusEl.textContent = t; statusEl.className = warn ? "warn" : ""; };
-  let ctx = null, node = null;
+  if (!SH) { say("The sound core did not load.", true); return; }
 
-  // Sliders map to patch parameters (0..1 panel range)
-  const SL = {
-    cutoff: "cutoff", res: "res", envAmt: "envAmt", attack: "attack", decay: "decay",
-    sustain: "sustain", release: "release", wSaw: "wSaw", wPulse: "wPulse", pw: "pw",
-    pwmAmt: "pwmAmt", wSub: "wSub", wNoise: "wNoise", vibMax: "vibMax", volume: "volume"
-  };
-  // Map 0..1 attack/decay/release to the spec ranges (G36, exponential)
-  const tmap = (pos, lo, hi) => lo * Math.pow(hi / lo, pos);
-  function patchFrom(id) {
-    const el = document.getElementById(id);
-    let v = parseFloat(el.value);
-    if (id === "attack") return { attack: tmap(v, 0.0015, 4) };
-    if (id === "decay") return { decay: tmap(v, 0.002, 10) };
-    if (id === "release") return { release: tmap(v, 0.002, 10) };
-    if (id === "sustain") return { sustain: v };
-    return { [SL[id]]: v };
+  let ctx = null, node = null, holdOn = false;
+
+  // ---------- mappings: slider position 0..1 <-> patch value ----------
+  const clamp01 = v => Math.min(1, Math.max(0, v));
+  const tmap = (pos, lo, hi) => lo * Math.pow(hi / lo, pos);            // G36: exponential over the spec range
+  const tinv = (t, lo, hi) => clamp01(Math.log(t / lo) / Math.log(hi / lo));
+  const TIME = (lo, hi) => ({ to: v => tmap(v, lo, hi), from: p => tinv(p, lo, hi) });
+  const LIN = { to: v => v, from: p => clamp01(p) };
+  const fmtPct = p => Math.round(p * 100) + "%";
+  const fmtSec = p => p < 1 ? Math.round(p * 1000) + " ms" : p.toFixed(2) + " s";
+
+  // Panel layout follows the panel photo and guess_ledger.md ("Layout follows the panel photo").
+  // kind: "patch" (goes to the core patch), "pwm" (the one PWM fader, G58), "mod" (mod lever, CC1), "bend" (spring-back lever).
+  const SECTIONS = [
+    { title: "Tune", items: [
+      { t: "slider", kind: "patch", id: "tune", key: "tuneCents", label: "Tune",
+        map: { to: v => (v - 0.5) * 100, from: p => clamp01(p / 100 + 0.5) }, fmt: p => Math.round(p) + " ct" },
+    ]},
+    { title: "Arpeggio", items: [
+      { t: "group", key: "arpMode", label: "Arp", values: ["off", "up", "updown", "down"], labels: ["Off", "Up", "U&D", "Down"] },
+      { t: "slider", kind: "patch", id: "arpBpm", key: "arpBpm", label: "Arp tempo",
+        map: { to: v => 60 + 180 * v, from: p => clamp01((p - 60) / 180) }, fmt: p => Math.round(p) + " BPM" },
+      { t: "toggle", key: "legato", label: "Legato" },
+      { t: "group", key: "transpose", label: "Transpose", values: [0, 12, 24], labels: ["L", "M", "H"] },
+    ]},
+    { title: "Modulator", items: [
+      { t: "slider", kind: "patch", id: "lfoRate", key: "lfoRate", label: "Rate",
+        map: { to: v => 0.1 * Math.pow(300, v), from: p => clamp01(Math.log(p / 0.1) / Math.log(300)) },
+        fmt: p => p.toFixed(2) + " Hz" },
+      { t: "group", key: "lfoWave", label: "Wave", values: ["triangle", "square", "random", "noise"], labels: ["Tri", "Square", "Random", "Noise"] },
+    ]},
+    { title: "VCO", items: [
+      { t: "slider", kind: "patch", id: "vibMax", key: "vibMax", label: "MOD depth",
+        map: { to: v => v * 0.1, from: p => clamp01(p / 0.1) }, fmt: p => p.toFixed(3) + " st" },
+      { t: "group", key: "rangeOct", label: "Range", values: [-1, 0, 1, 2], labels: ["16'", "8'", "4'", "2'"] },
+      { t: "slider", kind: "pwm", id: "pwm", label: "Pulse width" },
+      { t: "group", key: "pwmSrc", label: "PWM source", values: ["env", "lfo", "man"], labels: ["ENV", "LFO", "MAN"] },
+    ]},
+    { title: "Source mixer", items: [
+      { t: "slider", kind: "patch", id: "wPulse", key: "wPulse", label: "Pulse", map: LIN, fmt: fmtPct },
+      { t: "slider", kind: "patch", id: "wSaw", key: "wSaw", label: "Saw", map: LIN, fmt: fmtPct },
+      { t: "slider", kind: "patch", id: "wSub", key: "wSub", label: "Sub", map: LIN, fmt: fmtPct },
+      { t: "group", key: "subOct", label: "Sub switch", values: ["1", "2", "2p"], labels: ["1 oct sq", "2 oct sq", "2 oct pulse"] },
+      { t: "slider", kind: "patch", id: "wNoise", key: "wNoise", label: "Noise", map: LIN, fmt: fmtPct },
+    ]},
+    { title: "VCF", items: [
+      { t: "slider", kind: "patch", id: "cutoff", key: "cutoff", label: "Freq", map: LIN,
+        fmt: p => Math.round(SH.cutoffHz(60, p)) + " Hz at C4" },
+      { t: "slider", kind: "patch", id: "res", key: "res", label: "Resonance", map: LIN, fmt: fmtPct },
+      { t: "slider", kind: "patch", id: "envAmt", key: "envAmt", label: "ENV", map: LIN, fmt: fmtPct },
+      { t: "slider", kind: "patch", id: "lfoCut", key: "lfoCut", label: "MOD", map: LIN, fmt: fmtPct },
+      { t: "slider", kind: "patch", id: "keyFollow", key: "keyFollow", label: "KYBD", map: LIN, fmt: fmtPct },
+    ]},
+    { title: "VCA", items: [
+      { t: "group", key: "vcaMode", label: "VCA", values: ["ENV", "GATE"], labels: ["ENV", "GATE"] },
+    ]},
+    { title: "Envelope", items: [
+      { t: "group", key: "envTrig", label: "Trigger", values: ["gate", "gatetrig", "lfo"], labels: ["Gate", "Gate+Trig", "LFO"] },
+      { t: "slider", kind: "patch", id: "attack", key: "attack", label: "Attack", map: TIME(0.0015, 4), fmt: fmtSec },
+      { t: "slider", kind: "patch", id: "decay", key: "decay", label: "Decay", map: TIME(0.002, 10), fmt: fmtSec },
+      { t: "slider", kind: "patch", id: "sustain", key: "sustain", label: "Sustain", map: LIN, fmt: fmtPct },
+      { t: "slider", kind: "patch", id: "release", key: "release", label: "Release", map: TIME(0.002, 10), fmt: fmtSec },
+    ]},
+    { title: "Controller", items: [
+      { t: "slider", kind: "patch", id: "volume", key: "volume", label: "Volume", map: LIN, fmt: fmtPct },
+      { t: "slider", kind: "patch", id: "portaTime", key: "portaTime", label: "Portamento",
+        map: { to: v => v * 5, from: p => clamp01(p / 5) }, fmt: fmtSec },
+      { t: "group", key: "portaMode", label: "Portamento mode", values: ["auto", "off", "on"], labels: ["Auto", "Off", "On"] },
+      { t: "slider", kind: "patch", id: "vcoBend", key: "vcoBend", label: "VCO bend", map: LIN, fmt: fmtPct },
+      { t: "slider", kind: "patch", id: "vcfBend", key: "vcfBend", label: "VCF bend", map: LIN, fmt: fmtPct },
+      { t: "slider", kind: "mod", id: "lfoMod", label: "LFO MOD" },
+      { t: "slider", kind: "bend", id: "bender", label: "Bender", min: -1, max: 1 },
+    ]},
+  ];
+
+  // ---------- state: the patch sent to the core, and the one PWM fader ----------
+  const S = {};            // full patch, kept in sync with the controls
+  let pwBase = 0.5;        // hidden base pulse width (core's pw); not on the panel
+  let pwFader = 0;         // the single PWM fader (G58)
+  const ctrl = {}, groups = {}, toggles = {};
+
+  // Pulse width (G58): MAN sets the width; ENV and LFO use the fader as depth on the hidden base width.
+  function withPwm() {
+    if (S.pwmSrc === "man") S.pw = pwFader;
+    else { S.pw = pwBase; S.pwmAmt = pwFader * 0.5; }
+    return S;
   }
-  var allPatch = function () {
-    let p = {};
-    Object.keys(SL).forEach(id => Object.assign(p, patchFrom(id)));
-    p.rangeOct = parseInt(document.getElementById("range").value, 10);
-    return p;
-  };
-  function pushPatch() { if (node) node.port.postMessage({ type: "patch", patch: allPatch() }); }
-  function showValues() {
-    document.querySelectorAll(".sl input").forEach(el => {
-      const v = el.nextElementSibling; if (v) v.textContent = el.value;
+  function pwmText() {
+    return (S.pwmSrc === "man" ? "duty " : "depth ") + Math.round(pwFader * 50) + "%";
+  }
+  function postMsg(m) { if (node) node.port.postMessage(m); }
+  function send() { withPwm(); postMsg({ type: "patch", patch: S }); }
+
+  // ---------- control building ----------
+  // Continuous patch controls are knobs (ui/knob.js). It reads and writes state.params through setParam.
+  // Sliders remain for the PWM fader, the mod lever, and the spring-back bender.
+  const state = { params: {} };
+  window.state = state;
+  window.setParam = (id, v) => { state.params[id] = v; applyControl(id); };
+
+  function applyControl(id) {
+    const c = ctrl[id]; if (!c) return;
+    const it = c.it, v = state.params[id];
+    if (it.kind === "patch") { S[it.key] = it.map.to(v); send(); }
+    else if (it.kind === "pwm") { pwFader = v; send(); }
+    else if (it.kind === "mod") postMsg({ type: "cc", cc: 1, value: Math.round(v * 127) });
+    else if (it.kind === "bend") postMsg({ type: "bend", value: Math.round(v * 8191) });
+    refreshOut(id);
+  }
+  function refreshOut(id) {
+    const c = ctrl[id]; if (!c || !c.out) return;     // knobs draw their own readout
+    const it = c.it;
+    if (it.kind === "pwm") c.out.textContent = pwmText();
+    else if (it.kind === "mod") c.out.textContent = fmtPct(parseFloat(c.input.value));
+    else if (it.kind === "bend") c.out.textContent = parseFloat(c.input.value).toFixed(2);
+  }
+  function syncAll() {
+    for (const id in ctrl) {
+      const c = ctrl[id], it = c.it;
+      if (it.kind === "patch") {
+        state.params[id] = it.map.from(S[it.key]);
+        if (knobDraw[id]) knobDraw[id]();
+      } else if (it.kind === "pwm") {
+        c.input.value = pwFader;
+      }
+      refreshOut(id);
+    }
+    for (const key in groups) {
+      const g = groups[key];
+      g.btns.forEach((b, i) => b.classList.toggle("on", g.values[i] === S[key]));
+    }
+    for (const key in toggles) toggles[key].classList.toggle("on", !!S[key]);
+  }
+  function makeKnob(it) {
+    const def = it.map.from(SH.DEFAULT[it.key]);
+    state.params[it.id] = it.map.from(S[it.key] ?? SH.DEFAULT[it.key]);
+    ctrl[it.id] = { it, input: null, out: null };
+    return buildKnob({ id: it.id, label: it.label, def, fmt: v => it.fmt(it.map.to(v)) });
+  }
+  function makeSlider(it) {
+    const row = document.createElement("div"); row.className = "sl";
+    row.innerHTML = `<label for="c-${it.id}">${it.label}</label>` +
+      `<input type="range" id="c-${it.id}" min="${it.min ?? 0}" max="${it.max ?? 1}" step="0.001">` +
+      `<output></output>`;
+    const input = row.querySelector("input"), out = row.querySelector("output");
+    const c = { it, input, out };
+    ctrl[it.id] = c;
+    state.params[it.id] = it.kind === "pwm" ? pwFader : 0;
+    input.addEventListener("input", () => { state.params[it.id] = parseFloat(input.value); applyControl(it.id); });
+    if (it.kind === "bend") {                                   // the lever springs back to centre
+      const back = () => { input.value = 0; state.params[it.id] = 0; applyControl(it.id); };
+      ["pointerup", "pointercancel", "touchend", "mouseup"].forEach(ev => input.addEventListener(ev, back));
+    }
+    return row;
+  }
+  function makeGroup(it) {
+    const wrap = document.createElement("div"); wrap.className = "grp";
+    wrap.innerHTML = `<div class="cap">${it.label}</div><div class="seg"></div>`;
+    const seg = wrap.querySelector(".seg");
+    const btns = it.values.map((val, i) => {
+      const b = document.createElement("button"); b.type = "button"; b.textContent = it.labels[i];
+      b.addEventListener("click", () => { S[it.key] = val; syncAll(); send(); });
+      seg.appendChild(b);
+      return b;
     });
+    groups[it.key] = { values: it.values, btns };
+    return wrap;
   }
-  Object.keys(SL).forEach(id => document.getElementById(id).addEventListener("input", () => { showValues(); pushPatch(); }));
-  document.getElementById("range").addEventListener("change", pushPatch);
-  document.getElementById("patch").addEventListener("change", e => {
-    const P = SH.PATCHES[e.target.value];
-    // sync sliders to the patch values (panel scale: cutoff/res/etc are already 0..1; times are reverse-mapped)
-    const setv = (id, v) => { const el = document.getElementById(id); if (el && v !== undefined) el.value = v; };
-    setv("cutoff", P.cutoff ?? 0.5); setv("res", P.res ?? 0.4); setv("envAmt", P.envAmt ?? 0.6);
-    setv("wSaw", P.wSaw ?? 0); setv("wPulse", P.wPulse ?? 0); setv("wSub", P.wSub ?? 0);
-    setv("pw", P.pw ?? 0.5); setv("pwmAmt", P.pwmAmt ?? 0.25); setv("vibMax", P.vibMax ?? 0);
-    setv("sustain", P.sustain ?? 0.35);
-    const inv = (t, lo, hi) => Math.log(t / lo) / Math.log(hi / lo);
-    setv("attack", inv(P.attack ?? 0.005, 0.0015, 4));
-    setv("decay", inv(P.decay ?? 0.25, 0.002, 10));
-    setv("release", inv(P.release ?? 0.2, 0.002, 10));
-    showValues(); pushPatch();
-  });
+  function makeToggle(it) {
+    const wrap = document.createElement("div"); wrap.className = "grp";
+    const b = document.createElement("button"); b.type = "button"; b.textContent = it.label;
+    b.addEventListener("click", () => { S[it.key] = !S[it.key]; syncAll(); send(); });
+    wrap.appendChild(b);
+    toggles[it.key] = b;
+    return wrap;
+  }
+  function buildPanels() {
+    const root = $("#panels");
+    for (const sec of SECTIONS) {
+      const box = document.createElement("section"); box.className = "panel";
+      box.innerHTML = `<h2>${sec.title}</h2>`;
+      let knobRow = null;
+      for (const it of sec.items) {
+        if (it.t === "slider" && it.kind === "patch") {
+          if (!knobRow) { knobRow = document.createElement("div"); knobRow.className = "knobs"; box.appendChild(knobRow); }
+          knobRow.appendChild(makeKnob(it));
+          continue;
+        }
+        knobRow = null;
+        box.appendChild(it.t === "slider" ? makeSlider(it) : it.t === "group" ? makeGroup(it) : makeToggle(it));
+      }
+      root.appendChild(box);
+    }
+  }
 
-  // ----- on-screen keyboard: C3 (48) to C5 (72) -----
-  const keysEl = document.getElementById("keys");
+  // ---------- presets ----------
+  function loadPreset(name) {
+    Object.assign(S, SH.DEFAULT, SH.PATCHES[name]);
+    if (S.vcaGate) S.vcaMode = "GATE";          // the whistle preset gates the VCA
+    pwBase = S.pw;
+    pwFader = S.pwmSrc === "man" ? S.pw : clamp01(S.pwmAmt * 2);
+    syncAll();
+    send();
+  }
+
+  // ---------- on-screen keyboard: C3 (48) to C5 (72) ----------
+  const keysEl = $("#keys");
   const LOW = 48, HIGH = 72;
-  const whiteOrder = [0, 2, 4, 5, 7, 9, 11];
   const isBlack = m => [1, 3, 6, 8, 10].includes(m % 12);
   const whites = []; for (let m = LOW; m <= HIGH; m++) if (!isBlack(m)) whites.push(m);
   const wWidth = 100 / whites.length;
@@ -344,10 +657,10 @@
     d.style.left = ((prevWhite + 1) * wWidth - wWidth * 0.3) + "%"; d.style.width = (wWidth * 0.6) + "%";
     d.dataset.m = m; keysEl.appendChild(d); keyEls[m] = d;
   }
-  function noteOn(m, src) { if (!node) return; node.port.postMessage({ type: "on", note: m }); if (keyEls[m]) keyEls[m].classList.add("on-k"); }
-  function noteOff(m) { if (!node) return; node.port.postMessage({ type: "off", note: m }); if (keyEls[m]) keyEls[m].classList.remove("on-k"); }
-  // Each finger holds its own key, so several keys can sound at once (needed for arpeggio and legato).
-  const fingers = new Map();                       // pointerId -> MIDI note
+  function noteOn(m) { if (!node) return; postMsg({ type: "on", note: m }); if (keyEls[m]) keyEls[m].classList.add("on-k"); }
+  function noteOff(m) { if (!node) return; postMsg({ type: "off", note: m }); if (keyEls[m]) keyEls[m].classList.remove("on-k"); }
+  // Each finger holds its own key, so several keys can sound at once (arpeggio and legato need this).
+  const fingers = new Map();
   const keyAt = (x, y) => { const el = document.elementFromPoint(x, y); return el && el.dataset && el.dataset.m ? parseInt(el.dataset.m, 10) : null; };
   keysEl.addEventListener("pointerdown", e => {
     const m = keyAt(e.clientX, e.clientY); if (m === null) return;
@@ -356,8 +669,7 @@
   });
   keysEl.addEventListener("pointermove", e => {
     if (!fingers.has(e.pointerId)) return;
-    const m = keyAt(e.clientX, e.clientY);
-    const old = fingers.get(e.pointerId);
+    const m = keyAt(e.clientX, e.clientY), old = fingers.get(e.pointerId);
     if (m !== null && m !== old) { noteOff(old); fingers.set(e.pointerId, m); noteOn(m); }
   });
   const fingerUp = e => {
@@ -367,7 +679,15 @@
   keysEl.addEventListener("pointerup", fingerUp);
   keysEl.addEventListener("pointercancel", fingerUp);
 
-  // ----- audio -----
+  // ---------- hold ----------
+  function setHold(on) {
+    holdOn = !!on;
+    $("#hold").classList.toggle("on", holdOn);
+    postMsg({ type: "hold", on: holdOn });
+  }
+  $("#hold").addEventListener("click", () => setHold(!holdOn));
+
+  // ---------- audio ----------
   const WORKLET = `
     __CORE_SLOT__
     class SH101Processor extends AudioWorkletProcessor {
@@ -381,6 +701,7 @@
           else if (m.type === "off") this.v.noteOff(m.note);
           else if (m.type === "cc") this.v.control(m.cc, m.value);
           else if (m.type === "bend") this.v.pitchBend(m.value);
+          else if (m.type === "hold") this.v.setHold(m.on);
           else if (m.type === "patch") this.v.setPatch(m.patch);
         };
       }
@@ -398,32 +719,35 @@
     if (ctx) { await ctx.resume(); return; }
     ctx = new (window.AudioContext || window.webkitAudioContext)();
     const coreText = document.getElementById("core-src").textContent;
-    const code = WORKLET.replace("__CORE_SLOT__", coreText);
+    const code = WORKLET.replace("__CORE_SLOT__", () => coreText);
     const url = URL.createObjectURL(new Blob([code], { type: "text/javascript" }));
     await ctx.audioWorklet.addModule(url);
     node = new AudioWorkletNode(ctx, "sh101", { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [1] });
     node.connect(ctx.destination);
     await ctx.resume();
-    pushPatch();
+    send();
+    postMsg({ type: "hold", on: holdOn });
     say("Sound on. Play the keys, or connect a MIDI keyboard.");
     dbg.textContent = "Audio: on (" + Math.round(ctx.sampleRate) + " Hz)";
-    document.getElementById("start").classList.add("on");
+    $("#start").classList.add("on");
   }
-  document.getElementById("start").addEventListener("click", () => startAudio().catch(err => say("Audio failed: " + err, true)));
+  $("#start").addEventListener("click", () => startAudio().catch(err => say("Audio failed: " + err, true)));
 
-  // ----- Web MIDI -----
-  const midiSel = document.getElementById("midi");
+  // ---------- Web MIDI ----------
+  const midiSel = $("#midi");
   let midiAccess = null, inputs = [];
-  const dbg = document.getElementById("debug");
   function onMidi(e) {
     const [st, d1, d2] = e.data; const kind = st & 0xf0;
     dbg.textContent = "MIDI in: status " + st.toString(16) + " data " + d1 + " " + (d2 === undefined ? "" : d2) +
       (node ? "" : "  (audio is OFF: tap Start sound)");
     if (!node) { say("MIDI is arriving, but audio is off. Tap Start sound.", true); return; }
-    if (kind === 0x90 && d2 > 0) node.port.postMessage({ type: "on", note: d1 });
-    else if (kind === 0x80 || (kind === 0x90 && d2 === 0)) node.port.postMessage({ type: "off", note: d1 });
-    else if (kind === 0xb0) node.port.postMessage({ type: "cc", cc: d1, value: d2 });
-    else if (kind === 0xe0) node.port.postMessage({ type: "bend", value: ((d2 << 7) | d1) - 8192 });
+    if (kind === 0x90 && d2 > 0) postMsg({ type: "on", note: d1 });
+    else if (kind === 0x80 || (kind === 0x90 && d2 === 0)) postMsg({ type: "off", note: d1 });
+    else if (kind === 0xb0) {
+      if (d1 === 64) setHold(d2 >= 64);                          // sustain pedal drives Hold
+      else postMsg({ type: "cc", cc: d1, value: d2 });
+    }
+    else if (kind === 0xe0) postMsg({ type: "bend", value: ((d2 << 7) | d1) - 8192 });
   }
   // Listen on every MIDI input at once. Keyboards often expose several ports, and only one may carry notes.
   function refreshInputs() {
@@ -449,41 +773,15 @@
     say("This browser has no Web MIDI (iPhone Safari does not). On-screen keys still work.", true);
   }
 
-
-  // ----- performance controls -----
-  const bpmFrom = v => Math.round(60 + v * 180);          // 60..240 BPM
-  const portaFrom = v => v * 5;                           // 0..5 s (service manual range)
-  function perfPatch() {
-    return {
-      arpMode: document.getElementById("arpMode").value,
-      arpBpm: bpmFrom(parseFloat(document.getElementById("arpBpm").value)),
-      legato: document.getElementById("legato").checked,
-      transpose: parseInt(document.getElementById("transpose").value, 10),
-      portaTime: portaFrom(parseFloat(document.getElementById("portaTime").value))
-    };
-  }
-  const _allPatch = allPatch;
-  allPatch = function () { return Object.assign(_allPatch(), perfPatch()); };
-  ["arpMode", "legato", "transpose"].forEach(id => document.getElementById(id).addEventListener("change", pushPatch));
-  ["arpBpm", "portaTime"].forEach(id => document.getElementById(id).addEventListener("input", () => { showValues(); pushPatch(); }));
-  document.getElementById("modWheel").addEventListener("input", e => {
-    if (node) node.port.postMessage({ type: "cc", cc: 1, value: Math.round(parseFloat(e.target.value) * 127) });
-  });
-  const bend = document.getElementById("bender");
-  bend.addEventListener("input", e => {
-    if (node) node.port.postMessage({ type: "bend", value: Math.round(parseFloat(e.target.value) * 8191) });
-  });
-  const springBack = () => { bend.value = 0; if (node) node.port.postMessage({ type: "bend", value: 0 }); showValues(); };
-  bend.addEventListener("pointerup", springBack);
-  bend.addEventListener("touchend", springBack);
-  bend.addEventListener("mouseup", springBack);
-
-  // start with the bass patch loaded into the sliders
-  document.getElementById("patch").dispatchEvent(new Event("change"));
-  showValues();
+  // ---------- start ----------
+  buildPanels();
+  $("#patch").addEventListener("change", e => loadPreset(e.target.value));
+  loadPreset("bass");
 })();
 </script>
-<script type="text/plain" id="core-src">/* SH-101 emulator core (JavaScript port of sh101_engine.py). Same models and guesses (G36-G44).
+
+<script type="text/plain" id="core-src">
+/* SH-101 emulator core (JavaScript port of sh101_engine.py). Same models and guesses (G36-G44).
    Works in a browser AudioWorklet and in Node for testing. No DOM access. */
 (function (root) {
   const A4 = 442.0;
@@ -494,11 +792,24 @@
 
   const kcv = (m) => 0.417 + (m - 53) / 12.0;  // service manual: F3 = 0.417 V, 1 V/oct
   function bus(p) { return CUT_MIN + p * (CUT_MAX - CUT_MIN); }
-  function cutoffHz(midi, p) {
-    const v9 = PIN9 * (bus(p) - KYB * (kcv(midi) - kcv(60)));
+  function cutoffHz(midi, p, follow) {
+    const f = follow === undefined ? 1 : follow;               // Key Follow knob, 0..1 (Roland spec)
+    const v9 = PIN9 * (bus(p) - f * KYB * (kcv(midi) - kcv(60)));
     return K4 * FC0 * Math.pow(2, -v9 / VC);
   }
-  function noteHz(midi, rangeOct) { return A4 * Math.pow(2, (midi - 69) / 12) * Math.pow(2, rangeOct); }
+  // Seeded PRNG (mulberry32). Gives repeatable noise, so renders are identical run to run.
+  // The seed is fixed (DEFAULT.seed) and not exposed on the panel yet.
+  function makeRng(seed) {
+    let a = seed >>> 0;
+    return function () {
+      a = (a + 0x6D2B79F5) >>> 0;
+      let t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;   // [0, 1)
+    };
+  }
+  function noteHz(midi, rangeOct, cents) { return A4 * Math.pow(2, (midi - 69) / 12) * Math.pow(2, rangeOct) * Math.pow(2, (cents || 0) / 1200); }
 
   function blep(t, dt) {
     if (t < dt) { const x = t / dt; return 2 * x - x * x - 1; }
@@ -533,25 +844,33 @@
     attackPwm: 0.01, decayPwm: 0.2, pw: 0.5, pwmAmt: 0.25,
     wSaw: 1, wPulse: 0, wSub: 0, wNoise: 0, cutoff: 0.5, res: 0.4, envAmt: 0.6,
     lfoRate: 5.0, lfoCut: 0, vibMax: 0, vcaGate: false, volume: 0.8,
-    // new performance features
-    legato: false,          // new note while holding: change pitch, do not retrigger envelopes
-    portaTime: 0,           // portamento glide time in seconds, 0..5 (service manual range)
-    transpose: 0,           // semitones: 0 (L), 12 (M), 24 (H). Manual: M = +1 V, H = +2 V of KCV
-    arpMode: "off",         // "off" | "up" | "down" | "updown"
-    arpBpm: 120 };          // arpeggio clock; steps are sixteenth notes (G45)
+    legato: false, portaTime: 0, transpose: 0, arpMode: "off", arpBpm: 120,
+    // switches (G50-G54)
+    lfoWave: "triangle",    // "square" | "triangle" | "noise" | "random"
+    vcoWave: "both",        // not a Roland switch: the source mixer levels control saw and pulse (G51 corrected)
+    subOct: "1",            // "1" = square 1 oct down, "2" = square 2 oct down, "2p" = pulse 2 oct down (panel, G62)
+    vcaMode: "ENV",         // "ENV" | "GATE"
+    envTrig: "gate",        // "gate" | "gatetrig" | "lfo"
+    pwmSrc: "env",          // PWM source: "env" | "lfo" | "man" (panel switch LFO / MAN / ENV, G56)
+    portaMode: "auto",      // portamento: "auto" | "off" | "on" (panel AUTO / OFF / ON, G57)
+    keyFollow: 1,           // KYBD / Key Follow slider, 0..1
+    tuneCents: 0,           // TUNE knob, +-50 cents
+    vcoBend: 1,             // Bend VCO slider: 1 = +-2 semitones at full lever
+    vcfBend: 0,             // Bend VCF slider: 1 = +-1 octave at full lever (G69)
+    seed: 101 };            // noise seed (fixed for now; not on the panel)
 
   class Voice {
     constructor(fs, patch) {
       this.fs = fs; this.p = Object.assign({}, DEFAULT, patch || {});
-      this.stack = []; this.midi = null; this.mod = 0; this.bend = 0;
-      this.resCC = null; this.cutCC = null;
-      this.ph = 0; this.phSub = 0; this.phLfo = 0;
+      this.stack = []; this.physical = new Set(); this.hold = false;
+      this.midi = null; this.mod = 0; this.resCC = null; this.cutCC = null;
+      this.ph = 0; this.phSub = 0; this.phLfo = 0; this.lfoHold = 0; this.bendNorm = 0;
       this.pwmEnv = new Env(fs, this.p.attackPwm, this.p.decayPwm, 0, this.p.release);
       this.ampEnv = new Env(fs, this.p.attack, this.p.decay, this.p.sustain, this.p.release);
-      this.y = [0, 0, 0, 0]; this.baseCut = 0; this.gateNow = 0;
-      this.pitch = null;          // current pitch in semitones (glides for portamento)
-      this.target = null;         // target pitch in semitones (transposed MIDI note)
+      this.y = [0, 0, 0, 0]; this.baseCut = 0;
+      this.pitch = null; this.target = null; this.glideAllowed = false;
       this.arpIdx = 0; this.arpDir = 1; this.arpCount = 0; this.arpGateAt = 0; this.arpFirst = false;
+      this.rand = makeRng(this.p.seed);
     }
     rebuildEnvs() {
       this.pwmEnv = new Env(this.fs, this.p.attackPwm, this.p.decayPwm, 0, this.p.release);
@@ -559,36 +878,56 @@
     }
     setPatch(patch) {
       this.p = Object.assign({}, this.p, patch);
-      const p = this.p;                     // update envelopes in place so a held note keeps sounding
+      const p = this.p;
       this.pwmEnv.setParams(p.attackPwm, p.decayPwm, 0, p.release);
       this.ampEnv.setParams(p.attack, p.decay, p.sustain, p.release);
       if (this.midi !== null) this.play(this.midi, false);
     }
-    arpSteps() { return Math.max(1, Math.round(this.fs * 60 / this.p.arpBpm / 4)); }   // sixteenths
-    /* Set the sounding note. retrigger restarts the envelopes (not for legato or glide). */
+    arpSteps() { return Math.max(1, Math.round(this.fs * 60 / this.p.arpBpm / 4)); }
     play(midi, retrigger) {
       const eff = midi + this.p.transpose;
-      this.midi = midi;                                    // played key (for display/arp bookkeeping)
-      this.target = eff;
+      this.midi = midi; this.target = eff;
       if (this.pitch === null) this.pitch = eff;
       const pos = this.cutCC !== null ? this.cutCC : this.p.cutoff;
-      this.baseCut = cutoffHz(eff, pos);                   // keyboard tracking uses the transposed pitch
-      if (retrigger) { this.ampEnv.on(); this.pwmEnv.on(); }
+      this.baseCut = cutoffHz(eff, pos, this.p.keyFollow);
+      if (retrigger && this.p.envTrig !== "lfo") { this.ampEnv.on(); this.pwmEnv.on(); }
     }
     noteOn(midi) {
+      this.physical.add(midi);
       const i = this.stack.indexOf(midi); if (i >= 0) this.stack.splice(i, 1);
       const hadNotes = this.stack.length > 0;
       this.stack.push(midi);
       if (this.p.arpMode !== "off") {
-        if (!hadNotes) { this.arpCount = this.arpSteps(); this.arpFirst = true; }   // first key starts the arpeggio at once
+        if (!hadNotes) { this.arpCount = this.arpSteps(); this.arpFirst = true; }
         return;
       }
-      this.play(midi, !(this.p.legato && hadNotes));
+      const retrig = this.p.envTrig === "gatetrig" ? true : !(this.p.legato && hadNotes);
+      // portamento: ON glides every note; AUTO glides only when a key is played while others are held; OFF never
+      this.glideAllowed = this.p.portaMode === "on" || (this.p.portaMode === "auto" && hadNotes);
+      this.play(midi, retrig);
     }
     noteOff(midi) {
+      this.physical.delete(midi);
+      if (this.hold) return;                                // hold keeps the notes sounding
+      this.release(midi);
+    }
+    release(midi) {
       const i = this.stack.indexOf(midi); if (i >= 0) this.stack.splice(i, 1);
-      if (this.stack.length === 0) { this.ampEnv.off(); this.pwmEnv.off(); this.arpCount = 0; return; }
+      if (this.stack.length === 0) {
+        if (this.p.envTrig !== "lfo") { this.ampEnv.off(); this.pwmEnv.off(); }
+        this.arpCount = 0; return;
+      }
       if (this.p.arpMode === "off" && midi === this.midi) this.play(this.stack[this.stack.length - 1], false);
+    }
+    setHold(on) {
+      this.hold = !!on;
+      if (!this.hold) {                                     // releasing hold lets go of keys that are no longer down
+        const keep = this.stack.filter(m => this.physical.has(m));
+        const dropped = this.stack.filter(m => !this.physical.has(m));
+        this.stack = keep;
+        if (this.stack.length === 0) { if (this.p.envTrig !== "lfo") { this.ampEnv.off(); this.pwmEnv.off(); } this.arpCount = 0; }
+        else if (dropped.length && this.p.arpMode === "off" && this.midi !== null && !keep.includes(this.midi)) this.play(keep[keep.length - 1], false);
+      }
     }
     control(cc, value) {
       const v = value / 127;
@@ -596,19 +935,15 @@
       else if (cc === 71) this.resCC = v;
       else if (cc === 74) { this.cutCC = v; if (this.midi !== null) this.play(this.midi, false); }
     }
-    pitchBend(value) { this.bend = 2 * value / 8192; }   // value -8192..8191 -> semitones
+    pitchBend(value) { this.bendNorm = Math.max(-1, Math.min(1, value / 8192)); }
 
-    /* Arpeggiator: advance one sixteenth at a time through the held notes (G45). */
     arpAdvance() {
       const notes = this.stack.slice().sort((a, b) => a - b);
-      const n = notes.length;
-      const mode = this.p.arpMode;
-      if (this.arpFirst) {                                 // first step plays the lowest (up, updown) or highest (down) note
-        this.arpFirst = false; this.arpDir = 1;
-        this.arpIdx = mode === "down" ? n - 1 : 0;
-      } else if (mode === "up") this.arpIdx = (this.arpIdx + 1) % n;
+      const n = notes.length, mode = this.p.arpMode;
+      if (this.arpFirst) { this.arpFirst = false; this.arpDir = 1; this.arpIdx = mode === "down" ? n - 1 : 0; }
+      else if (mode === "up") this.arpIdx = (this.arpIdx + 1) % n;
       else if (mode === "down") this.arpIdx = (this.arpIdx - 1 + n) % n;
-      else {                                              // updown: bounce without repeating the ends
+      else {
         if (n > 1) {
           this.arpIdx += this.arpDir;
           if (this.arpIdx >= n - 1) { this.arpIdx = n - 1; this.arpDir = -1; }
@@ -619,40 +954,57 @@
       this.play(notes[this.arpIdx], true);
     }
 
-    /* Render n samples into out. */
     render(out, n) {
       const p = this.p, fs = this.fs;
-      if (this.ampEnv.stage === 0 && this.stack.length === 0) { for (let i = 0; i < n; i++) out[i] = 0; return; }
+      if (this.stack.length === 0 && this.ampEnv.stage === 0) { for (let i = 0; i < n; i++) out[i] = 0; return; }
       if (this.midi === null && this.stack.length === 0) { for (let i = 0; i < n; i++) out[i] = 0; return; }
       const res = this.resCC !== null ? this.resCC : p.res;
-      const k = Math.min(4.2 * res / 0.785, 5.0);          // G41
+      const k = Math.min(4.2 * res / 0.785, 5.0);
       const vib = this.mod * p.vibMax;
       const gateOn = this.stack.length > 0 ? 1 : 0;
       const glideCoef = p.portaTime > 0 ? 1 - Math.exp(-1 / (fs * Math.max(p.portaTime / 3, 1e-4))) : 1;
       const arpOn = p.arpMode !== "off" && this.stack.length > 0;
       const stepLen = this.arpSteps();
+      const sawOn = p.vcoWave !== "pulse" ? 1 : 0, pulseOn = p.vcoWave !== "saw" ? 1 : 0;
+      const subDiv = (p.subOct === "2" || p.subOct === "2p") ? 4 : 2, subOn = 1;
+      const subPulse = p.subOct === "2p";
+      const gateMode = p.vcaMode === "GATE" || p.vcaGate;
       for (let i = 0; i < n; i++) {
-        if (arpOn) {                                          // arpeggiator clock
+        if (arpOn) {
           this.arpCount++;
           if (this.arpCount >= stepLen) { this.arpCount = 0; this.arpGateAt = Math.round(stepLen * 0.6); this.arpAdvance(); }
           if (this.arpCount === this.arpGateAt) { this.ampEnv.off(); this.pwmEnv.off(); }
         }
-        if (this.pitch !== null && this.target !== null) this.pitch += (this.target - this.pitch) * glideCoef;
-        const ph = this.phLfo; this.phLfo = (ph + p.lfoRate / fs) % 1;
-        const lfo = 2 * Math.abs(2 * ph - 1) - 1;                   // G43 triangle
+        if (this.pitch !== null && this.target !== null) {
+          if (this.glideAllowed && p.portaTime > 0) this.pitch += (this.target - this.pitch) * glideCoef;
+          else this.pitch = this.target;
+        }
+        const ph0 = this.phLfo;
+        this.phLfo = (ph0 + p.lfoRate / fs) % 1;
+        const wrapped = this.phLfo < ph0;
+        if (wrapped) this.lfoHold = this.rand() * 2 - 1;      // random: new level each LFO cycle
+        if (wrapped && p.envTrig === "lfo") { this.ampEnv.on(); this.pwmEnv.on(); }
+        let lfo;
+        if (p.lfoWave === "square") lfo = this.phLfo < 0.5 ? 1 : -1;
+        else if (p.lfoWave === "noise") lfo = this.rand() * 2 - 1;
+        else if (p.lfoWave === "random") lfo = this.lfoHold;
+        else lfo = 2 * Math.abs(2 * this.phLfo - 1) - 1;        // triangle (G43)
         const envPwm = this.pwmEnv.next();
         const env = this.ampEnv.next();
-        const f = noteHz(this.pitch === null ? 69 : this.pitch, p.rangeOct) * Math.pow(2, (vib * lfo + this.bend) / 12);
+        const f = noteHz(this.pitch === null ? 69 : this.pitch, p.rangeOct, p.tuneCents) * Math.pow(2, (vib * lfo + 2 * this.bendNorm * p.vcoBend) / 12);
         const dt = f / fs;
         this.ph = (this.ph + dt) % 1; const t = this.ph;
-        this.phSub = (this.phSub + dt / 2) % 1; const ts = this.phSub;
-        const duty = Math.min(0.98, Math.max(0.02, 0.5 * p.pw + p.pwmAmt * envPwm));
+        this.phSub = (this.phSub + dt / subDiv) % 1; const ts = this.phSub;
+        const pwmMod = p.pwmSrc === "env" ? envPwm : p.pwmSrc === "lfo" ? lfo : 0;   // MAN = no modulation
+        const duty = Math.min(0.98, Math.max(0.02, 0.5 * p.pw + p.pwmAmt * pwmMod));
         const saw = 2 * t - 1 - blep(t, dt);
         const pulse = (t < duty ? 1 : -1) - blep(t, dt) + blep((t - duty + 1) % 1, dt);
-        const sub = (ts < 0.5 ? 1 : -1) - blep(ts, dt / 2) + blep((ts - 0.5 + 1) % 1, dt / 2);
-        const noise = Math.random() * 2 - 1;
-        const src = p.wSaw * MIX.saw * saw + p.wPulse * MIX.pulse * pulse + p.wSub * MIX.sub * sub + p.wNoise * MIX.noise * noise;
-        const cut = this.baseCut * Math.pow(2, p.envAmt * 4.0 * env + p.lfoCut * lfo);   // G40
+        const subDuty = subPulse ? 0.25 : 0.5;                 // G62: pulse sub taken as 25% width
+        const sub = (ts < subDuty ? 1 : -1) - blep(ts, dt / subDiv) + blep((ts - subDuty + 1) % 1, dt / subDiv);
+        const noise = this.rand() * 2 - 1;
+        const src = sawOn * p.wSaw * MIX.saw * saw + pulseOn * p.wPulse * MIX.pulse * pulse
+                  + subOn * p.wSub * MIX.sub * sub + p.wNoise * MIX.noise * noise;
+        const cut = this.baseCut * Math.pow(2, p.envAmt * 4.0 * env + p.lfoCut * lfo + this.bendNorm * p.vcfBend);
         const g = 1 - Math.exp(-2 * Math.PI * Math.min(Math.max(cut, 20), fs * 0.45) / fs);
         const x = src * 0.5;
         const y = this.y;
@@ -661,7 +1013,7 @@
         y[1] += g * (Math.tanh(y[0]) - y[1]);
         y[2] += g * (Math.tanh(y[1]) - y[2]);
         y[3] += g * (Math.tanh(y[2]) - y[3]);
-        const gain = p.vcaGate ? gateOn : env;                        // G44 linear VCA
+        const gain = gateMode ? gateOn : env;                   // G44 / VCA switch
         out[i] = y[3] * gain * p.volume;
       }
     }
