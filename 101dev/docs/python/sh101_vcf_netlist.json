@@ -1,0 +1,332 @@
+{
+  "source": "Roland SH-101 service manual p.7 (Nov 1 1982) read at native resolution; datasheet AS3109 v2.2; Electric Druid Rev.2",
+  "passives": [
+    {
+      "ref": "R114",
+      "kind": "R",
+      "a": "in1",
+      "b": "o1",
+      "value": 68000.0,
+      "confidence": "read"
+    },
+    {
+      "ref": "R117",
+      "kind": "R",
+      "a": "o1",
+      "b": "in2",
+      "value": 68000.0,
+      "confidence": "read"
+    },
+    {
+      "ref": "R118",
+      "kind": "R",
+      "a": "in2",
+      "b": "o2",
+      "value": 68000.0,
+      "confidence": "read"
+    },
+    {
+      "ref": "R119",
+      "kind": "R",
+      "a": "o2",
+      "b": "in3",
+      "value": 68000.0,
+      "confidence": "read"
+    },
+    {
+      "ref": "R121",
+      "kind": "R",
+      "a": "in3",
+      "b": "o3",
+      "value": 68000.0,
+      "confidence": "read"
+    },
+    {
+      "ref": "R124",
+      "kind": "R",
+      "a": "o3",
+      "b": "in4",
+      "value": 68000.0,
+      "confidence": "read"
+    },
+    {
+      "ref": "R122",
+      "kind": "R",
+      "a": "in4",
+      "b": "o4",
+      "value": 68000.0,
+      "confidence": "read"
+    },
+    {
+      "ref": "R115",
+      "kind": "R",
+      "a": "in1",
+      "b": "0",
+      "value": 560.0,
+      "confidence": "read"
+    },
+    {
+      "ref": "R116",
+      "kind": "R",
+      "a": "in2",
+      "b": "0",
+      "value": 560.0,
+      "confidence": "read"
+    },
+    {
+      "ref": "R120",
+      "kind": "R",
+      "a": "in3",
+      "b": "0",
+      "value": 560.0,
+      "confidence": "read"
+    },
+    {
+      "ref": "R123",
+      "kind": "R",
+      "a": "in4",
+      "b": "0",
+      "value": 560.0,
+      "confidence": "read"
+    },
+    {
+      "ref": "C48",
+      "kind": "C",
+      "a": "c1",
+      "b": "0",
+      "value": 2.4e-10,
+      "confidence": "read"
+    },
+    {
+      "ref": "C47",
+      "kind": "C",
+      "a": "c2",
+      "b": "0",
+      "value": 2.4e-10,
+      "confidence": "read"
+    },
+    {
+      "ref": "C50",
+      "kind": "C",
+      "a": "c3",
+      "b": "0",
+      "value": 2.4e-10,
+      "confidence": "read"
+    },
+    {
+      "ref": "C51",
+      "kind": "C",
+      "a": "c4",
+      "b": "0",
+      "value": 2.4e-10,
+      "confidence": "read"
+    },
+    {
+      "ref": "C45",
+      "kind": "C",
+      "a": "sumn",
+      "b": "in1",
+      "value": 1e-05,
+      "confidence": "read"
+    },
+    {
+      "ref": "R113",
+      "kind": "R",
+      "a": "in1",
+      "b": "clamp",
+      "value": 15000.0,
+      "confidence": "read"
+    },
+    {
+      "ref": "R129",
+      "kind": "R",
+      "a": "clamp",
+      "b": "x52",
+      "value": 5600.0,
+      "confidence": "read"
+    },
+    {
+      "ref": "C52",
+      "kind": "C",
+      "a": "x52",
+      "b": "e27",
+      "value": 1e-05,
+      "confidence": "read"
+    },
+    {
+      "ref": "R131",
+      "kind": "R",
+      "a": "e26",
+      "b": "0",
+      "value": 10000.0,
+      "confidence": "read"
+    },
+    {
+      "ref": "R136",
+      "kind": "R",
+      "a": "c26",
+      "b": "sup",
+      "value": 15000.0,
+      "confidence": "read"
+    },
+    {
+      "ref": "R135",
+      "kind": "R",
+      "a": "sup",
+      "b": "0",
+      "value": 1000.0,
+      "confidence": "read"
+    },
+    {
+      "ref": "C54",
+      "kind": "C",
+      "a": "sup",
+      "b": "0",
+      "value": 1e-05,
+      "confidence": "read"
+    },
+    {
+      "ref": "R137",
+      "kind": "R",
+      "a": "e27",
+      "b": "0",
+      "value": 33000.0,
+      "confidence": "read (value from errata list)"
+    },
+    {
+      "ref": "R130",
+      "kind": "R",
+      "a": "o4",
+      "b": "vca",
+      "value": 150000.0,
+      "confidence": "read"
+    },
+    {
+      "ref": "R132",
+      "kind": "R",
+      "a": "e26",
+      "b": "vca",
+      "value": 150000.0,
+      "confidence": "read"
+    },
+    {
+      "ref": "R_VCA_LOAD",
+      "kind": "R",
+      "a": "vca",
+      "b": "0",
+      "value": 1000.0,
+      "confidence": "ASSUMED"
+    }
+  ],
+  "mixer": [
+    {
+      "ref": "R109",
+      "source": "noise",
+      "value": 150000.0,
+      "note": "values read from scan; source names from Electric Druid design"
+    },
+    {
+      "ref": "R110",
+      "source": "pulse",
+      "value": 680000.0,
+      "note": "values read from scan; source names from Electric Druid design"
+    },
+    {
+      "ref": "R111",
+      "source": "ramp",
+      "value": 470000.0,
+      "note": "values read from scan; source names from Electric Druid design"
+    },
+    {
+      "ref": "R112",
+      "source": "sub",
+      "value": 820000.0,
+      "note": "values read from scan; source names from Electric Druid design"
+    }
+  ],
+  "ic14_pins": {
+    "1": {
+      "name": "GND/ref",
+      "note": "pin-1 reference net (dot-on-bar symbol); C47/C48/C50/C51, R125 return here"
+    },
+    "2": {
+      "name": "In1",
+      "note": "node in1: R115 560 to bus, R114 68k to pin 4, signal in via C45/R113"
+    },
+    "3": {
+      "name": "C1",
+      "note": "C48 240p to reference"
+    },
+    "4": {
+      "name": "Out1",
+      "note": "node o1: R114 / R117"
+    },
+    "5": {
+      "name": "In2",
+      "note": "node in2: R117, R118, R116 560"
+    },
+    "6": {
+      "name": "C2",
+      "note": "C47 240p"
+    },
+    "7": {
+      "name": "Out2",
+      "note": "node o2: R118 / R119"
+    },
+    "8": {
+      "name": "VEE",
+      "note": "hatched ground symbol (0 V)"
+    },
+    "9": {
+      "name": "VC",
+      "note": "cutoff CV: R125 820 to reference; R128/R126/TH1/R127 network"
+    },
+    "10": {
+      "name": "In3",
+      "note": "node in3: R119, R121, R120 560"
+    },
+    "11": {
+      "name": "C3",
+      "note": "C50 240p"
+    },
+    "12": {
+      "name": "Out3",
+      "note": "node o3: R121 / R124"
+    },
+    "13": {
+      "name": "In4",
+      "note": "node in4: R124, R122, R123 560"
+    },
+    "14": {
+      "name": "C4",
+      "note": "C51 240p"
+    },
+    "15": {
+      "name": "Out4",
+      "note": "node o4: R122; VCF output"
+    },
+    "16": {
+      "name": "VCC",
+      "note": "supply arrow, C49 10u/16V to ground"
+    }
+  },
+  "cutoff_cv_network": {
+    "R128": "4.7k from summed cutoff CV",
+    "R126": "1.8k",
+    "TH1": "SDT-1000 thermistor (R25 and curve unknown)",
+    "R127": "5.6k across R126+TH1",
+    "R125": "820 pin9 to reference"
+  },
+  "resonance": {
+    "VR18": "100kB: ends = pin 15 and reference (+5V per errata), wiper = TR26 base",
+    "TR26": "2SC1815GR (assumed hFE 250)",
+    "TR27": "2SC1815GR (assumed hFE 250)",
+    "path": "pin15 -> VR18 -> TR26 -> TR27 emitter -> C52 -> R129 -> (D30/D31 clamp to ref) -> R113 -> in1"
+  },
+  "calibration": {
+    "gm0_uS": 46.53147518916996,
+    "fc_single_stage_Hz": 250.0,
+    "node_divider": 123.42857142857143,
+    "sens_mV_per_oct": 19
+  }
+}
