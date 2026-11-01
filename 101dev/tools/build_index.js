@@ -27,11 +27,18 @@ const coreScript = "<script>\n" + core + "</script>";
 const coreSrc = '<script type="text/plain" id="core-src">\n' + srcText + "</script>";
 
 // Use replacer functions so "$" sequences in the core are never interpreted.
+const knobCss = fs.readFileSync(path.join(root, "ui", "knob.css"), "utf8");
+const knobJs = fs.readFileSync(path.join(root, "ui", "knob.js"), "utf8");
+if (/<\/script/i.test(knobJs)) throw new Error("knob.js contains a closing script tag");
+const knobScript = "<script>\n" + knobJs + "</script>";
+
 let html = template
   .replace("<!--CORE_SCRIPT-->", () => coreScript)
+  .replace("<!--KNOB_SCRIPT-->", () => knobScript)
+  .replace("<!--KNOB_CSS-->", () => knobCss)
   .replace("<!--CORE_SRC-->", () => coreSrc);
 
-if (html.includes("<!--CORE_")) throw new Error("a core placeholder was not replaced");
+if (html.includes("<!--CORE_") || html.includes("<!--KNOB_")) throw new Error("a core placeholder was not replaced");
 
 fs.writeFileSync(outPath, html);
 console.log(`wrote ${path.relative(process.cwd(), outPath) || outPath} (${html.length} bytes, core ${core.length} bytes x2)`);

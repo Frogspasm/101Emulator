@@ -1,0 +1,18 @@
+/* AcidBox knob styles. The colours are CSS variables, so a skin only has to set these: */
+:root {
+  --track: rgba(240, 207, 62, 0.22);   /* empty part of the ring */
+  --led: #FF5B40;                      /* filled part of the ring */
+  --knob-body: #F0CF3E;                /* the dial */
+  --knob-mark: #121935;                /* the pointer line */
+  --ink: #F0CF3E;
+  --ink-soft: #A9A487;
+}
+
+.knob {
+  display: flex; flex-direction: column; align-items: center;
+  touch-action: none; user-select: none; -webkit-user-select: none;
+  cursor: ns-resize; border-radius: 14px; padding: 2px 0;
+}
+.knob svg { width: 64px; height: 64px; max-width: 100%; display: block; }
+.klabel { font-size: 14px; font-weight: 600; margin-top: 2px; }
+.kval { font-size: 12px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }

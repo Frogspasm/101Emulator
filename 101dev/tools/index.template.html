@@ -31,6 +31,8 @@
   .grp .cap { color: #aaa; font-size: 13px; margin-bottom: 4px; }
   .seg { display: flex; flex-wrap: wrap; gap: 6px; }
   .seg button, .grp > button { flex: 1 1 auto; padding: 8px 6px; font-size: 13px; }
+  .knobs { display: flex; flex-wrap: wrap; justify-content: space-around; gap: 6px 4px; margin: 6px 0; }
+  <!--KNOB_CSS-->
   footer { color: #777; font-size: 12px; margin: 16px 0 0; }
 </style>
 </head>
@@ -51,6 +53,8 @@
 <footer>Built from docs/sh101_core.js by tools/build_index.js. Edit the core or the template, then rebuild.</footer>
 
 <!--CORE_SCRIPT-->
+
+<!--KNOB_SCRIPT-->
 
 <script>
 (function () {
@@ -155,19 +159,37 @@
   function send() { withPwm(); postMsg({ type: "patch", patch: S }); }
 
   // ---------- control building ----------
-  function refreshOut(id) {
+  // Continuous patch controls are knobs (ui/knob.js). It reads and writes state.params through setParam.
+  // Sliders remain for the PWM fader, the mod lever, and the spring-back bender.
+  const state = { params: {} };
+  window.state = state;
+  window.setParam = (id, v) => { state.params[id] = v; applyControl(id); };
+
+  function applyControl(id) {
     const c = ctrl[id]; if (!c) return;
+    const it = c.it, v = state.params[id];
+    if (it.kind === "patch") { S[it.key] = it.map.to(v); send(); }
+    else if (it.kind === "pwm") { pwFader = v; send(); }
+    else if (it.kind === "mod") postMsg({ type: "cc", cc: 1, value: Math.round(v * 127) });
+    else if (it.kind === "bend") postMsg({ type: "bend", value: Math.round(v * 8191) });
+    refreshOut(id);
+  }
+  function refreshOut(id) {
+    const c = ctrl[id]; if (!c || !c.out) return;     // knobs draw their own readout
     const it = c.it;
-    if (it.kind === "patch") c.out.textContent = it.fmt(S[it.key]);
-    else if (it.kind === "pwm") c.out.textContent = pwmText();
+    if (it.kind === "pwm") c.out.textContent = pwmText();
     else if (it.kind === "mod") c.out.textContent = fmtPct(parseFloat(c.input.value));
     else if (it.kind === "bend") c.out.textContent = parseFloat(c.input.value).toFixed(2);
   }
   function syncAll() {
     for (const id in ctrl) {
       const c = ctrl[id], it = c.it;
-      if (it.kind === "patch") c.input.value = it.map.from(S[it.key]);
-      else if (it.kind === "pwm") c.input.value = pwFader;
+      if (it.kind === "patch") {
+        state.params[id] = it.map.from(S[it.key]);
+        if (knobDraw[id]) knobDraw[id]();
+      } else if (it.kind === "pwm") {
+        c.input.value = pwFader;
+      }
       refreshOut(id);
     }
     for (const key in groups) {
@@ -176,13 +198,11 @@
     }
     for (const key in toggles) toggles[key].classList.toggle("on", !!S[key]);
   }
-  function onSlider(c, v) {
-    const it = c.it;
-    if (it.kind === "patch") { S[it.key] = it.map.to(v); send(); }
-    else if (it.kind === "pwm") { pwFader = v; send(); }
-    else if (it.kind === "mod") postMsg({ type: "cc", cc: 1, value: Math.round(v * 127) });
-    else if (it.kind === "bend") postMsg({ type: "bend", value: Math.round(v * 8191) });
-    refreshOut(it.id);
+  function makeKnob(it) {
+    const def = it.map.from(SH.DEFAULT[it.key]);
+    state.params[it.id] = it.map.from(S[it.key] ?? SH.DEFAULT[it.key]);
+    ctrl[it.id] = { it, input: null, out: null };
+    return buildKnob({ id: it.id, label: it.label, def, fmt: v => it.fmt(it.map.to(v)) });
   }
   function makeSlider(it) {
     const row = document.createElement("div"); row.className = "sl";
@@ -192,9 +212,10 @@
     const input = row.querySelector("input"), out = row.querySelector("output");
     const c = { it, input, out };
     ctrl[it.id] = c;
-    input.addEventListener("input", () => onSlider(c, parseFloat(input.value)));
+    state.params[it.id] = it.kind === "pwm" ? pwFader : 0;
+    input.addEventListener("input", () => { state.params[it.id] = parseFloat(input.value); applyControl(it.id); });
     if (it.kind === "bend") {                                   // the lever springs back to centre
-      const back = () => { input.value = 0; postMsg({ type: "bend", value: 0 }); refreshOut(it.id); };
+      const back = () => { input.value = 0; state.params[it.id] = 0; applyControl(it.id); };
       ["pointerup", "pointercancel", "touchend", "mouseup"].forEach(ev => input.addEventListener(ev, back));
     }
     return row;
@@ -225,7 +246,14 @@
     for (const sec of SECTIONS) {
       const box = document.createElement("section"); box.className = "panel";
       box.innerHTML = `<h2>${sec.title}</h2>`;
+      let knobRow = null;
       for (const it of sec.items) {
+        if (it.t === "slider" && it.kind === "patch") {
+          if (!knobRow) { knobRow = document.createElement("div"); knobRow.className = "knobs"; box.appendChild(knobRow); }
+          knobRow.appendChild(makeKnob(it));
+          continue;
+        }
+        knobRow = null;
         box.appendChild(it.t === "slider" ? makeSlider(it) : it.t === "group" ? makeGroup(it) : makeToggle(it));
       }
       root.appendChild(box);
