@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SH-101 emulator</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, sans-serif; background: #1d1d1f; color: #eee; padding: 12px; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); overflow-x: hidden; }
+  h1 { font-size: 20px; margin: 4px 0 8px; }
+  button, select { font: inherit; background: #333; color: #eee; border: 1px solid #555; border-radius: 8px; padding: 8px 10px; }
+  button.on { background: #b5651d; border-color: #b5651d; }
+  input[type=range] { width: 100%; min-width: 0; margin: 0; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+  #status { font-size: 13px; color: #9c9; min-height: 18px; }
+  #debug { font-size: 12px; color: #888; min-height: 16px; }
+  .warn { color: #e9a; }
+  #keys { position: relative; height: 150px; user-select: none; touch-action: none; margin: 8px 0 12px; }
+  .wk, .bk { position: absolute; top: 0; box-sizing: border-box; border: 1px solid #111; border-radius: 0 0 6px 6px; }
+  .wk { background: #f2f2f2; height: 100%; color: #333; }
+  .bk { background: #111; height: 60%; color: #eee; z-index: 2; }
+  .on-k { background: #f0a040 !important; }
+  .lbl { position: absolute; bottom: 4px; width: 100%; text-align: center; font-size: 10px; pointer-events: none; }
+  #panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 8px; }
+  .panel { background: #26262a; border-radius: 10px; padding: 8px 10px 10px; min-width: 0; }
+  .panel h2 { font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: #f0a040; margin: 2px 0 6px; }
+  .sl { display: grid; grid-template-columns: 84px minmax(0, 1fr) 84px; align-items: center; gap: 8px; margin: 6px 0; font-size: 14px; }
+  .sl output { text-align: right; color: #aaa; font-variant-numeric: tabular-nums; font-size: 12px; }
+  .grp { margin: 8px 0; }
+  .grp .cap { color: #aaa; font-size: 13px; margin-bottom: 4px; }
+  .seg { display: flex; flex-wrap: wrap; gap: 6px; }
+  .seg button, .grp > button { flex: 1 1 auto; padding: 8px 6px; font-size: 13px; }
+  footer { color: #777; font-size: 12px; margin: 16px 0 0; }
+</style>
+</head>
+<body>
+<h1>SH-101 emulator</h1>
+<div class="row">
+  <button id="start" type="button">Start sound</button>
+  <select id="patch"><option value="bass">Bass</option><option value="pwm">PWM lead</option><option value="whistle">Resonant whistle</option></select>
+  <button id="hold" type="button" title="Keep notes sounding after release">Hold</button>
+  <select id="midi"><option value="">MIDI: none</option></select>
+</div>
+<div id="status">Tap "Start sound" first. Sound needs a tap on most phones.</div>
+<div id="debug"></div>
+
+<div id="keys"></div>
+
+<div id="panels"></div>
+<footer>Built from docs/sh101_core.js by tools/build_index.js. Edit the core or the template, then rebuild.</footer>
+
+<!--CORE_SCRIPT-->
+
+<script>
+(function () {
+  "use strict";
+  const SH = window.SH101;
+  const $ = s => document.querySelector(s);
+  const statusEl = $("#status"), dbg = $("#debug");
+  const say = (t, warn) => { statusEl.textContent = t; statusEl.className = warn ? "warn" : ""; };
+  if (!SH) { say("The sound core did not load.", true); return; }
+
+  let ctx = null, node = null, holdOn = false;
+
+  // ---------- mappings: slider position 0..1 <-> patch value ----------
+  const clamp01 = v => Math.min(1, Math.max(0, v));
+  const tmap = (pos, lo, hi) => lo * Math.pow(hi / lo, pos);            // G36: exponential over the spec range
+  const tinv = (t, lo, hi) => clamp01(Math.log(t / lo) / Math.log(hi / lo));
+  const TIME = (lo, hi) => ({ to: v => tmap(v, lo, hi), from: p => tinv(p, lo, hi) });
+  const LIN = { to: v => v, from: p => clamp01(p) };
+  const fmtPct = p => Math.round(p * 100) + "%";
+  const fmtSec = p => p < 1 ? Math.round(p * 1000) + " ms" : p.toFixed(2) + " s";
+
+  // Panel layout follows the panel photo and guess_ledger.md ("Layout follows the panel photo").
+  // kind: "patch" (goes to the core patch), "pwm" (the one PWM fader, G58), "mod" (mod lever, CC1), "bend" (spring-back lever).
+  const SECTIONS = [
+    { title: "Tune", items: [
+      { t: "slider", kind: "patch", id: "tune", key: "tuneCents", label: "Tune",
+        map: { to: v => (v - 0.5) * 100, from: p => clamp01(p / 100 + 0.5) }, fmt: p => Math.round(p) + " ct" },
+    ]},
+    { title: "Arpeggio", items: [
+      { t: "group", key: "arpMode", label: "Arp", values: ["off", "up", "updown", "down"], labels: ["Off", "Up", "U&D", "Down"] },
+      { t: "slider", kind: "patch", id: "arpBpm", key: "arpBpm", label: "Arp tempo",
+        map: { to: v => 60 + 180 * v, from: p => clamp01((p - 60) / 180) }, fmt: p => Math.round(p) + " BPM" },
+      { t: "toggle", key: "legato", label: "Legato" },
+      { t: "group", key: "transpose", label: "Transpose", values: [0, 12, 24], labels: ["L", "M", "H"] },
+    ]},
+    { title: "Modulator", items: [
+      { t: "slider", kind: "patch", id: "lfoRate", key: "lfoRate", label: "Rate",
+        map: { to: v => 0.1 * Math.pow(300, v), from: p => clamp01(Math.log(p / 0.1) / Math.log(300)) },
+        fmt: p => p.toFixed(2) + " Hz" },
+      { t: "group", key: "lfoWave", label: "Wave", values: ["triangle", "square", "random", "noise"], labels: ["Tri", "Square", "Random", "Noise"] },
+    ]},
+    { title: "VCO", items: [
+      { t: "slider", kind: "patch", id: "vibMax", key: "vibMax", label: "MOD depth",
+        map: { to: v => v * 0.1, from: p => clamp01(p / 0.1) }, fmt: p => p.toFixed(3) + " st" },
+      { t: "group", key: "rangeOct", label: "Range", values: [-1, 0, 1, 2], labels: ["16'", "8'", "4'", "2'"] },
+      { t: "slider", kind: "pwm", id: "pwm", label: "Pulse width" },
+      { t: "group", key: "pwmSrc", label: "PWM source", values: ["env", "lfo", "man"], labels: ["ENV", "LFO", "MAN"] },
+    ]},
+    { title: "Source mixer", items: [
+      { t: "slider", kind: "patch", id: "wPulse", key: "wPulse", label: "Pulse", map: LIN, fmt: fmtPct },
+      { t: "slider", kind: "patch", id: "wSaw", key: "wSaw", label: "Saw", map: LIN, fmt: fmtPct },
+      { t: "slider", kind: "patch", id: "wSub", key: "wSub", label: "Sub", map: LIN, fmt: fmtPct },
+      { t: "group", key: "subOct", label: "Sub switch", values: ["1", "2", "2p"], labels: ["1 oct sq", "2 oct sq", "2 oct pulse"] },
+      { t: "slider", kind: "patch", id: "wNoise", key: "wNoise", label: "Noise", map: LIN, fmt: fmtPct },
+    ]},
+    { title: "VCF", items: [
+      { t: "slider", kind: "patch", id: "cutoff", key: "cutoff", label: "Freq", map: LIN,
+        fmt: p => Math.round(SH.cutoffHz(60, p)) + " Hz at C4" },
+      { t: "slider", kind: "patch", id: "res", key: "res", label: "Resonance", map: LIN, fmt: fmtPct },
+      { t: "slider", kind: "patch", id: "envAmt", key: "envAmt", label: "ENV", map: LIN, fmt: fmtPct },
+      { t: "slider", kind: "patch", id: "lfoCut", key: "lfoCut", label: "MOD", map: LIN, fmt: fmtPct },
+      { t: "slider", kind: "patch", id: "keyFollow", key: "keyFollow", label: "KYBD", map: LIN, fmt: fmtPct },
+    ]},
+    { title: "VCA", items: [
+      { t: "group", key: "vcaMode", label: "VCA", values: ["ENV", "GATE"], labels: ["ENV", "GATE"] },
+    ]},
+    { title: "Envelope", items: [
+      { t: "group", key: "envTrig", label: "Trigger", values: ["gate", "gatetrig", "lfo"], labels: ["Gate", "Gate+Trig", "LFO"] },
+      { t: "slider", kind: "patch", id: "attack", key: "attack", label: "Attack", map: TIME(0.0015, 4), fmt: fmtSec },
+      { t: "slider", kind: "patch", id: "decay", key: "decay", label: "Decay", map: TIME(0.002, 10), fmt: fmtSec },
+      { t: "slider", kind: "patch", id: "sustain", key: "sustain", label: "Sustain", map: LIN, fmt: fmtPct },
+      { t: "slider", kind: "patch", id: "release", key: "release", label: "Release", map: TIME(0.002, 10), fmt: fmtSec },
+    ]},
+    { title: "Controller", items: [
+      { t: "slider", kind: "patch", id: "volume", key: "volume", label: "Volume", map: LIN, fmt: fmtPct },
+      { t: "slider", kind: "patch", id: "portaTime", key: "portaTime", label: "Portamento",
+        map: { to: v => v * 5, from: p => clamp01(p / 5) }, fmt: fmtSec },
+      { t: "group", key: "portaMode", label: "Portamento mode", values: ["auto", "off", "on"], labels: ["Auto", "Off", "On"] },
+      { t: "slider", kind: "patch", id: "vcoBend", key: "vcoBend", label: "VCO bend", map: LIN, fmt: fmtPct },
+      { t: "slider", kind: "patch", id: "vcfBend", key: "vcfBend", label: "VCF bend", map: LIN, fmt: fmtPct },
+      { t: "slider", kind: "mod", id: "lfoMod", label: "LFO MOD" },
+      { t: "slider", kind: "bend", id: "bender", label: "Bender", min: -1, max: 1 },
+    ]},
+  ];
+
+  // ---------- state: the patch sent to the core, and the one PWM fader ----------
+  const S = {};            // full patch, kept in sync with the controls
+  let pwBase = 0.5;        // hidden base pulse width (core's pw); not on the panel
+  let pwFader = 0;         // the single PWM fader (G58)
+  const ctrl = {}, groups = {}, toggles = {};
+
+  // Pulse width (G58): MAN sets the width; ENV and LFO use the fader as depth on the hidden base width.
+  function withPwm() {
+    if (S.pwmSrc === "man") S.pw = pwFader;
+    else { S.pw = pwBase; S.pwmAmt = pwFader * 0.5; }
+    return S;
+  }
+  function pwmText() {
+    return (S.pwmSrc === "man" ? "duty " : "depth ") + Math.round(pwFader * 50) + "%";
+  }
+  function postMsg(m) { if (node) node.port.postMessage(m); }
+  function send() { withPwm(); postMsg({ type: "patch", patch: S }); }
+
+  // ---------- control building ----------
+  function refreshOut(id) {
+    const c = ctrl[id]; if (!c) return;
+    const it = c.it;
+    if (it.kind === "patch") c.out.textContent = it.fmt(S[it.key]);
+    else if (it.kind === "pwm") c.out.textContent = pwmText();
+    else if (it.kind === "mod") c.out.textContent = fmtPct(parseFloat(c.input.value));
+    else if (it.kind === "bend") c.out.textContent = parseFloat(c.input.value).toFixed(2);
+  }
+  function syncAll() {
+    for (const id in ctrl) {
+      const c = ctrl[id], it = c.it;
+      if (it.kind === "patch") c.input.value = it.map.from(S[it.key]);
+      else if (it.kind === "pwm") c.input.value = pwFader;
+      refreshOut(id);
+    }
+    for (const key in groups) {
+      const g = groups[key];
+      g.btns.forEach((b, i) => b.classList.toggle("on", g.values[i] === S[key]));
+    }
+    for (const key in toggles) toggles[key].classList.toggle("on", !!S[key]);
+  }
+  function onSlider(c, v) {
+    const it = c.it;
+    if (it.kind === "patch") { S[it.key] = it.map.to(v); send(); }
+    else if (it.kind === "pwm") { pwFader = v; send(); }
+    else if (it.kind === "mod") postMsg({ type: "cc", cc: 1, value: Math.round(v * 127) });
+    else if (it.kind === "bend") postMsg({ type: "bend", value: Math.round(v * 8191) });
+    refreshOut(it.id);
+  }
+  function makeSlider(it) {
+    const row = document.createElement("div"); row.className = "sl";
+    row.innerHTML = `<label for="c-${it.id}">${it.label}</label>` +
+      `<input type="range" id="c-${it.id}" min="${it.min ?? 0}" max="${it.max ?? 1}" step="0.001">` +
+      `<output></output>`;
+    const input = row.querySelector("input"), out = row.querySelector("output");
+    const c = { it, input, out };
+    ctrl[it.id] = c;
+    input.addEventListener("input", () => onSlider(c, parseFloat(input.value)));
+    if (it.kind === "bend") {                                   // the lever springs back to centre
+      const back = () => { input.value = 0; postMsg({ type: "bend", value: 0 }); refreshOut(it.id); };
+      ["pointerup", "pointercancel", "touchend", "mouseup"].forEach(ev => input.addEventListener(ev, back));
+    }
+    return row;
+  }
+  function makeGroup(it) {
+    const wrap = document.createElement("div"); wrap.className = "grp";
+    wrap.innerHTML = `<div class="cap">${it.label}</div><div class="seg"></div>`;
+    const seg = wrap.querySelector(".seg");
+    const btns = it.values.map((val, i) => {
+      const b = document.createElement("button"); b.type = "button"; b.textContent = it.labels[i];
+      b.addEventListener("click", () => { S[it.key] = val; syncAll(); send(); });
+      seg.appendChild(b);
+      return b;
+    });
+    groups[it.key] = { values: it.values, btns };
+    return wrap;
+  }
+  function makeToggle(it) {
+    const wrap = document.createElement("div"); wrap.className = "grp";
+    const b = document.createElement("button"); b.type = "button"; b.textContent = it.label;
+    b.addEventListener("click", () => { S[it.key] = !S[it.key]; syncAll(); send(); });
+    wrap.appendChild(b);
+    toggles[it.key] = b;
+    return wrap;
+  }
+  function buildPanels() {
+    const root = $("#panels");
+    for (const sec of SECTIONS) {
+      const box = document.createElement("section"); box.className = "panel";
+      box.innerHTML = `<h2>${sec.title}</h2>`;
+      for (const it of sec.items) {
+        box.appendChild(it.t === "slider" ? makeSlider(it) : it.t === "group" ? makeGroup(it) : makeToggle(it));
+      }
+      root.appendChild(box);
+    }
+  }
+
+  // ---------- presets ----------
+  function loadPreset(name) {
+    Object.assign(S, SH.DEFAULT, SH.PATCHES[name]);
+    if (S.vcaGate) S.vcaMode = "GATE";          // the whistle preset gates the VCA
+    pwBase = S.pw;
+    pwFader = S.pwmSrc === "man" ? S.pw : clamp01(S.pwmAmt * 2);
+    syncAll();
+    send();
+  }
+
+  // ---------- on-screen keyboard: C3 (48) to C5 (72) ----------
+  const keysEl = $("#keys");
+  const LOW = 48, HIGH = 72;
+  const isBlack = m => [1, 3, 6, 8, 10].includes(m % 12);
+  const whites = []; for (let m = LOW; m <= HIGH; m++) if (!isBlack(m)) whites.push(m);
+  const wWidth = 100 / whites.length;
+  const keyEls = {};
+  whites.forEach((m, i) => {
+    const d = document.createElement("div"); d.className = "wk";
+    d.style.left = (i * wWidth) + "%"; d.style.width = (wWidth - 0.2) + "%";
+    d.dataset.m = m; keysEl.appendChild(d); keyEls[m] = d;
+    if (m % 12 === 0) { const l = document.createElement("div"); l.className = "lbl"; l.textContent = "C" + (Math.floor(m / 12) - 1); d.appendChild(l); }
+  });
+  for (let m = LOW; m <= HIGH; m++) if (isBlack(m)) {
+    const prevWhite = whites.indexOf(m - 1);
+    const d = document.createElement("div"); d.className = "bk";
+    d.style.left = ((prevWhite + 1) * wWidth - wWidth * 0.3) + "%"; d.style.width = (wWidth * 0.6) + "%";
+    d.dataset.m = m; keysEl.appendChild(d); keyEls[m] = d;
+  }
+  function noteOn(m) { if (!node) return; postMsg({ type: "on", note: m }); if (keyEls[m]) keyEls[m].classList.add("on-k"); }
+  function noteOff(m) { if (!node) return; postMsg({ type: "off", note: m }); if (keyEls[m]) keyEls[m].classList.remove("on-k"); }
+  // Each finger holds its own key, so several keys can sound at once (arpeggio and legato need this).
+  const fingers = new Map();
+  const keyAt = (x, y) => { const el = document.elementFromPoint(x, y); return el && el.dataset && el.dataset.m ? parseInt(el.dataset.m, 10) : null; };
+  keysEl.addEventListener("pointerdown", e => {
+    const m = keyAt(e.clientX, e.clientY); if (m === null) return;
+    e.preventDefault(); keysEl.setPointerCapture(e.pointerId);
+    fingers.set(e.pointerId, m); noteOn(m);
+  });
+  keysEl.addEventListener("pointermove", e => {
+    if (!fingers.has(e.pointerId)) return;
+    const m = keyAt(e.clientX, e.clientY), old = fingers.get(e.pointerId);
+    if (m !== null && m !== old) { noteOff(old); fingers.set(e.pointerId, m); noteOn(m); }
+  });
+  const fingerUp = e => {
+    if (!fingers.has(e.pointerId)) return;
+    noteOff(fingers.get(e.pointerId)); fingers.delete(e.pointerId);
+  };
+  keysEl.addEventListener("pointerup", fingerUp);
+  keysEl.addEventListener("pointercancel", fingerUp);
+
+  // ---------- hold ----------
+  function setHold(on) {
+    holdOn = !!on;
+    $("#hold").classList.toggle("on", holdOn);
+    postMsg({ type: "hold", on: holdOn });
+  }
+  $("#hold").addEventListener("click", () => setHold(!holdOn));
+
+  // ---------- audio ----------
+  const WORKLET = `
+    __CORE_SLOT__
+    class SH101Processor extends AudioWorkletProcessor {
+      constructor() {
+        super();
+        this.v = new SH101.Voice(sampleRate, {});
+        this.buf = new Float32Array(128);
+        this.port.onmessage = (e) => {
+          const m = e.data;
+          if (m.type === "on") this.v.noteOn(m.note);
+          else if (m.type === "off") this.v.noteOff(m.note);
+          else if (m.type === "cc") this.v.control(m.cc, m.value);
+          else if (m.type === "bend") this.v.pitchBend(m.value);
+          else if (m.type === "hold") this.v.setHold(m.on);
+          else if (m.type === "patch") this.v.setPatch(m.patch);
+        };
+      }
+      process(inputs, outputs) {
+        const out = outputs[0][0];
+        if (this.buf.length !== out.length) this.buf = new Float32Array(out.length);
+        this.v.render(this.buf, out.length);
+        out.set(this.buf);
+        return true;
+      }
+    }
+    registerProcessor("sh101", SH101Processor);
+  `;
+  async function startAudio() {
+    if (ctx) { await ctx.resume(); return; }
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const coreText = document.getElementById("core-src").textContent;
+    const code = WORKLET.replace("__CORE_SLOT__", () => coreText);
+    const url = URL.createObjectURL(new Blob([code], { type: "text/javascript" }));
+    await ctx.audioWorklet.addModule(url);
+    node = new AudioWorkletNode(ctx, "sh101", { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [1] });
+    node.connect(ctx.destination);
+    await ctx.resume();
+    send();
+    postMsg({ type: "hold", on: holdOn });
+    say("Sound on. Play the keys, or connect a MIDI keyboard.");
+    dbg.textContent = "Audio: on (" + Math.round(ctx.sampleRate) + " Hz)";
+    $("#start").classList.add("on");
+  }
+  $("#start").addEventListener("click", () => startAudio().catch(err => say("Audio failed: " + err, true)));
+
+  // ---------- Web MIDI ----------
+  const midiSel = $("#midi");
+  let midiAccess = null, inputs = [];
+  function onMidi(e) {
+    const [st, d1, d2] = e.data; const kind = st & 0xf0;
+    dbg.textContent = "MIDI in: status " + st.toString(16) + " data " + d1 + " " + (d2 === undefined ? "" : d2) +
+      (node ? "" : "  (audio is OFF: tap Start sound)");
+    if (!node) { say("MIDI is arriving, but audio is off. Tap Start sound.", true); return; }
+    if (kind === 0x90 && d2 > 0) postMsg({ type: "on", note: d1 });
+    else if (kind === 0x80 || (kind === 0x90 && d2 === 0)) postMsg({ type: "off", note: d1 });
+    else if (kind === 0xb0) {
+      if (d1 === 64) setHold(d2 >= 64);                          // sustain pedal drives Hold
+      else postMsg({ type: "cc", cc: d1, value: d2 });
+    }
+    else if (kind === 0xe0) postMsg({ type: "bend", value: ((d2 << 7) | d1) - 8192 });
+  }
+  // Listen on every MIDI input at once. Keyboards often expose several ports, and only one may carry notes.
+  function refreshInputs() {
+    midiSel.innerHTML = '<option value="">MIDI: none</option>';
+    inputs = [];
+    midiAccess.inputs.forEach(inp => {
+      inputs.push(inp);
+      inp.onmidimessage = onMidi;
+      const o = document.createElement("option"); o.value = inp.id; o.textContent = inp.name; midiSel.appendChild(o);
+    });
+    if (inputs.length === 0) say("No MIDI keyboard found. Plug one in (USB or Bluetooth), then reconnect.");
+    else say("Listening on " + inputs.length + " MIDI input(s): " + inputs.map(i => i.name).join(", "));
+  }
+  midiSel.addEventListener("change", () => {
+    const inp = inputs.find(i => i.id === midiSel.value);
+    if (inp) say("Listening on all inputs. Last selected: " + inp.name);
+  });
+  if (navigator.requestMIDIAccess) {
+    navigator.requestMIDIAccess({ sysex: false }).then(acc => {
+      midiAccess = acc; refreshInputs(); acc.onstatechange = refreshInputs;
+    }).catch(() => say("MIDI permission was refused.", true));
+  } else {
+    say("This browser has no Web MIDI (iPhone Safari does not). On-screen keys still work.", true);
+  }
+
+  // ---------- start ----------
+  buildPanels();
+  $("#patch").addEventListener("change", e => loadPreset(e.target.value));
+  loadPreset("bass");
+})();
+</script>
+
+<!--CORE_SRC-->
+</body>
+</html>
