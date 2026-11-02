@@ -110,9 +110,11 @@
       { t: "group", key: "lfoWave", label: "Wave", values: ["triangle", "square", "random", "noise"], labels: ["Tri", "Square", "Random", "Noise"] },
     ]},
     { title: "VCO", items: [
-      { t: "slider", kind: "patch", id: "vibMax", key: "vibMax", label: "MOD depth",
-        map: { to: v => v * 0.1, from: p => clamp01(p / 0.1) }, fmt: p => p.toFixed(3) + " st" },
-      { t: "group", key: "rangeOct", label: "Range", values: [-1, 0, 1, 2], labels: ["16'", "8'", "4'", "2'"] },
+      { t: "row", cls: "hrow", items: [
+        { t: "slider", kind: "patch", id: "vibMax", key: "vibMax", label: "MOD depth",
+          map: { to: v => v * 0.1, from: p => clamp01(p / 0.1) }, fmt: p => p.toFixed(3) + " st" },
+        { t: "group", key: "rangeOct", label: "Range", values: [-1, 0, 1, 2], labels: ["16'", "8'", "4'", "2'"], stack: true },
+      ] },
       { t: "row", cls: "hrow", items: [
         { t: "slider", kind: "pwm", id: "pwm", label: "Pulse width", vertical: true },
         { t: "group", key: "pwmSrc", label: "PWM source", values: ["env", "lfo", "man"], labels: ["ENV", "LFO", "MAN"], stack: true },
@@ -272,7 +274,7 @@
     return wrap;
   }
   function buildItem(it) {
-    if (it.t === "slider") return makeSlider(it);
+    if (it.t === "slider") return it.kind === "patch" ? makeKnob(it) : makeSlider(it);
     if (it.t === "group") return makeGroup(it);
     if (it.t === "hold") return makeHold();
     return makeToggle(it);
