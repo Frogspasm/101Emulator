@@ -31,7 +31,13 @@
   .grp .cap { color: #aaa; font-size: 13px; margin-bottom: 4px; }
   .seg { display: flex; flex-wrap: wrap; gap: 6px; }
   .seg button, .grp > button { flex: 1 1 auto; padding: 8px 6px; font-size: 13px; }
-  #keys.folded { display: none; }
+  /* keyboard section: a yellow chevron in the top-right corner. Down = keys hidden, up = keys shown. */
+  .keysec { position: relative; padding-top: 30px; margin: 8px 0 12px; }
+  .keysec.folded #keys { display: none; }
+  .chev { position: absolute; top: 0; right: 0; width: 30px; height: 30px; padding: 4px; display: flex; align-items: center; justify-content: center; background: transparent; border: none; border-radius: 6px; cursor: pointer; }
+  .chev:hover, .chev:focus-visible { background: rgba(240, 207, 62, 0.12); outline: 1px solid #F0CF3E; }
+  .chev svg { width: 18px; height: 18px; transition: transform .15s ease; }
+  .chev.open svg { transform: rotate(180deg); }
   .inline { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
   .inline > .grp { margin: 6px 0; flex: 0 0 auto; }
   .hrow { display: flex; gap: 12px; align-items: flex-start; margin: 6px 0; }
@@ -56,13 +62,17 @@
 <div class="row">
   <button id="start" type="button">Start sound</button>
   <select id="patch"><option value="bass">Bass</option><option value="pwm">PWM lead</option><option value="whistle">Resonant whistle</option></select>
-  <button id="keysToggle" type="button">Hide keys</button>
   <select id="midi"><option value="">MIDI: none</option></select>
 </div>
 <div id="status">Tap "Start sound" first. Sound needs a tap on most phones.</div>
 <div id="debug"></div>
 
-<div id="keys"></div>
+<div class="keysec open" id="keysSec">
+  <button id="keysToggle" class="chev open" type="button" aria-expanded="true" aria-label="Hide keyboard" title="Hide keyboard">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="#F0CF3E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
+  <div id="keys"></div>
+</div>
 
 <div id="panels"></div>
 <footer>Built from docs/sh101_core.js by tools/build_index.js. Edit the core or the template, then rebuild.</footer>
@@ -355,8 +365,12 @@
   keysEl.addEventListener("pointerup", fingerUp);
   keysEl.addEventListener("pointercancel", fingerUp);
   $("#keysToggle").addEventListener("click", () => {
-    const folded = keysEl.classList.toggle("folded");
-    $("#keysToggle").textContent = folded ? "Show keys" : "Hide keys";
+    const sec = $("#keysSec"), b = $("#keysToggle");
+    const open = sec.classList.toggle("folded") === false;
+    b.classList.toggle("open", open);                       // up when open, down when closed
+    b.setAttribute("aria-expanded", String(open));
+    b.setAttribute("aria-label", open ? "Hide keyboard" : "Show keyboard");
+    b.title = open ? "Hide keyboard" : "Show keyboard";
   });
 
   // ---------- hold ----------
