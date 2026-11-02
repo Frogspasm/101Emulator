@@ -495,7 +495,7 @@ function buildKnob(k) {
           map: { to: v => v * 0.1, from: p => clamp01(p / 0.1) }, fmt: p => p.toFixed(3) + " st" },
         { t: "group", key: "rangeOct", label: "Range", values: [-1, 0, 1, 2], labels: ["16'", "8'", "4'", "2'"], stack: true },
         { t: "slider", kind: "pwm", id: "pwm", label: "Pulse width", vertical: true },
-        { t: "group", key: "pwmSrc", label: "PWM source", values: ["env", "lfo", "man"], labels: ["ENV", "LFO", "MAN"], stack: true },
+        { t: "group", key: "pwmSrc", label: "PWM<br>source", values: ["env", "lfo", "man"], labels: ["ENV", "LFO", "MAN"], stack: true },
       ] },
     ]},
     { title: "Source mixer", items: [
