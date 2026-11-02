@@ -43,7 +43,10 @@
   .hrow { display: flex; gap: 12px; align-items: flex-start; margin: 6px 0; }
   .hrow > .grp { flex: 1 1 auto; min-width: 0; margin: 6px 0; }
   .hrow > .grp.stackgrp { flex: 0 0 auto; }   /* stacked buttons hug their labels */
-  .hrow.vco { gap: 22px; padding: 14px 0; }   /* VCO row: more room between controls */
+  .hrow.vco { gap: 22px; padding: 14px 0; justify-content: center; }   /* VCO row: more room, centred across the width */
+  .hrow.vco > .vsl { margin: 6px 0; }                                  /* Pulse width lines up with the other captions */
+  .hrow.vco > .vsl > label { font-size: 13px; }
+  .hrow > .grp.stackgrp .cap { text-align: center; }                    /* caption centred over the stacked buttons */
   .hrow.vco > .knob { align-self: center; }   /* MOD depth sits at the vertical centre of the section */
   .vsl { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 0 0 auto; font-size: 14px; }
   .vsl .vbox { position: relative; width: 36px; height: 150px; }
